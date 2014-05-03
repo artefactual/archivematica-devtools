@@ -1,0 +1,97 @@
+#!/usr/bin/env python
+
+from __future__ import print_function
+import argparse
+import os
+import sys
+
+from lxml import etree
+from fpr.models import Format, FormatGroup, FormatVersion, IDCommand, IDRule
+from django.db import connection
+
+archivematica_formats = {}
+unknown_format_group = FormatGroup.objects.get(description='Unknown')
+file_by_extension = IDCommand.objects.get(description='Identify by File Extension')
+
+
+def save_object(obj):
+    obj.save()
+    return connection.queries[-1]['sql']
+
+
+class PronomFormat(object):
+    def __init__(self, xml):
+        self.puid = xml.find('.puid').text
+        self.format_name = xml.find('.name').text
+        signature = xml.find('.signature')
+        if signature is not None:
+            self.version_name = xml.find('.signature/name').text
+        # Unfortunately, certain formats don't have signatures, and
+        # thus are missing the more specific name.
+        # In that scenario we just have to use the same string for both.
+        else:
+            self.version_name = self.format_name
+
+        # This field only allows 10 characters in the FPR database;
+        # just don't save this if it's too long.
+        self.version = xml.find('.version').text
+        if self.version and len(self.version) > 10:
+            self.version = ''
+
+        extension = xml.find('.extension')
+        if extension is not None and extension.text:
+            self.extension = '.' + extension.text
+        else:
+            self.extension = None
+
+
+def main(pronom_xml):
+    formats = etree.parse(pronom_xml)
+    for format in formats.getroot():
+        puid = format.find('.puid').text
+        # If a FormatVersion with this PUID already exists,
+        # we don't want to do anything.
+        try:
+            FormatVersion.objects.get(pronom_id=puid)
+            continue
+        except FormatVersion.DoesNotExist:
+            pass
+
+        new_format = PronomFormat(format)
+        print('Importing', new_format.version_name, file=sys.stderr)
+        parent_format = archivematica_formats.get(new_format.format_name)
+        if not parent_format:
+            try:
+                parent_format = Format.objects.get(description=new_format.format_name)
+            except Format.DoesNotExist:
+                parent_format = Format(
+                    description=new_format.format_name,
+                    group=unknown_format_group
+                )
+                print(save_object(parent_format))
+                archivematica_formats[new_format.format_name] = parent_format
+
+        format_version = FormatVersion(
+            format=parent_format,
+            pronom_id=new_format.puid,
+            description=new_format.version_name,
+            version=new_format.version
+        )
+        print(save_object(format_version))
+
+        if new_format.extension:
+            rule = IDRule(
+                format=format_version,
+                command=file_by_extension,
+                command_output=new_format.extension
+            )
+            print(save_object(rule))
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Import formats from PRONOM')
+    parser.add_argument('pronom_xml', help='Path to FIDO PRONOM XML file')
+    args = parser.parse_args()
+    if not os.path.exists(args.pronom_xml):
+        sys.exit('Pronom XML file does not exist!')
+
+    sys.exit(main(args.pronom_xml))
