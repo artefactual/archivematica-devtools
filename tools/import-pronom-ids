@@ -79,13 +79,21 @@ def main(pronom_xml):
         )
         print(save_object(format_version))
 
+        # If an extension is listed, set up a new IDRule so that
+        # the `Files by Extension` IDCommand can find them.
         if new_format.extension:
-            rule = IDRule(
-                format=format_version,
-                command=file_by_extension,
-                command_output=new_format.extension
-            )
-            print(save_object(rule))
+            # First check to see if a rule already exists: if it
+            # does, don't create a duplicate, because these IDRules
+            # can only map an extension to a single format.
+            try:
+                IDRule.objects.get(command_output=new_format.extension)
+            except IDRule.DoesNotExist:
+                rule = IDRule(
+                    format=format_version,
+                    command=file_by_extension,
+                    command_output=new_format.extension
+                )
+                print(save_object(rule))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Import formats from PRONOM')
