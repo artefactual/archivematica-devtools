@@ -1,0 +1,14 @@
+#!/bin/bash
+
+prefix="@PREFIX@"
+
+case $1 in
+	ls-tools)
+		ls "$prefix" 2>/dev/null
+		;;
+	*)
+		tool="$prefix/$1"
+		test -x "$tool" && exec "$tool" "$@"
+		echo "Tool not found: $1" && exit 1
+		;;
+esac
