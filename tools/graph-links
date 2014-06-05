@@ -39,7 +39,7 @@ linkUUIDtoNodeName = {}
 excludedNodes={'61c316a6-0a50-4f65-8767-1f44b1eeb6dd':"default fail procedure for transfers. Too many lines",
                '7d728c39-395f-4892-8193-92f086c0546f':"default fail procedure for SIPs. Too many lines",
                '333532b9-b7c2-4478-9415-28a3056d58df':"reject transfer option.",
-               '3467d003-1603-49e3-b085-e58aa693afed':"reject transfer option."}
+               '19c94543-14cb-4158-986b-1d2b55723cd8':"reject sip option."}
 
 def addArrow(sourceUUID, destUUID, color="black", label=None):
     if sourceUUID in excludedNodes or destUUID in excludedNodes:
@@ -67,8 +67,18 @@ def loadAllLinks():
         script_name = databaseInterface.queryAllSQL(sql)
         if script_name:
             script_name = script_name[0][0]
-        nodeName = r"{%s} %s\n(%s) [%s]" % (pk, description, taskType, script_name or pkRef)
-        G.add_node(nodeName, URL="MicroServiceChainLinks/%s" % pk, label=nodeName, id=nodeName)
+        elif not script_name:
+            sql = """SELECT variable, variableValue, microServiceChainLink FROM TasksConfigsSetUnitVariable WHERE pk='%s';""" % pkRef
+            returned = databaseInterface.queryAllSQL(sql)
+            if returned:
+                script_name = '%s, %s' % (returned[0][0], returned[0][1] or returned[0][2])
+        nodeName = r"{%s} %s\n(%s) %s\n[%s]" % (pk, description, taskType, pkRef, script_name or '')
+        # Color if start of chain
+        border_color = 'black'
+        sql = """SELECT * FROM MicroServiceChains WHERE startingLink='%s';""" % pk
+        if databaseInterface.queryAllSQL(sql):
+            border_color='darkgoldenrod'
+        G.add_node(nodeName, URL="MicroServiceChainLinks/%s" % pk, label=nodeName, id=nodeName, color=border_color)
         linkUUIDtoNodeName[pk] = nodeName
     for link in links:
         pk = link[0]
@@ -80,12 +90,15 @@ def loadAllLinks():
 def bridgeExitCodes():
     ""
     global allLinks
-    sql = """SELECT microServiceChainLink, nextMicroServiceChainLink FROM MicroServiceChainLinksExitCodes;"""
+    sql = """SELECT microServiceChainLink, nextMicroServiceChainLink, exitCode FROM MicroServiceChainLinksExitCodes;"""
     links = databaseInterface.queryAllSQL(sql)
     for link in links:
-        microServiceChainLink, nextMicroServiceChainLink = link
+        microServiceChainLink, nextMicroServiceChainLink, exit_code = link
         if nextMicroServiceChainLink:
-            addArrow(microServiceChainLink, nextMicroServiceChainLink)
+            if exit_code:
+                addArrow(microServiceChainLink, nextMicroServiceChainLink, label=exit_code)
+            else:
+                addArrow(microServiceChainLink, nextMicroServiceChainLink)
     return
 
 def bridgeUserSelections():
@@ -106,13 +119,13 @@ def bridgeWatchedDirectories():
     for row in rows:
         countOfSources = 0
         watchedDirectoryPath, startingLink = row
-        sql = "SELECT MicroServiceChainLinks.pk FROM StandardTasksConfigs JOIN TasksConfigs ON TasksConfigs.taskTypePKReference = StandardTasksConfigs.pk JOIN MicroServiceChainLinks ON MicroServiceChainLinks.currentTask = TasksConfigs.pk WHERE ( execute LIKE 'moveSIP%%' OR execute LIKE 'moveTransfer%%') AND taskType = '36b2e239-4a57-4aa5-8ebc-7a29139baca6' AND arguments like '%%%s%%';" % (watchedDirectoryPath.replace('%', '\%'))
+        sql = "SELECT MicroServiceChainLinks.pk FROM StandardTasksConfigs JOIN TasksConfigs ON TasksConfigs.taskTypePKReference = StandardTasksConfigs.pk JOIN MicroServiceChainLinks ON MicroServiceChainLinks.currentTask = TasksConfigs.pk WHERE execute LIKE 'move%%' AND taskType = '36b2e239-4a57-4aa5-8ebc-7a29139baca6' AND arguments like '%%%s%%';" % (watchedDirectoryPath.replace('%', '\%'))
         rows2 = databaseInterface.queryAllSQL(sql)
         for row2 in rows2:
             microServiceChainLink = row2[0]
             addArrow(microServiceChainLink, startingLink, color="yellow", label=watchedDirectoryPath)
             countOfSources +=1
-        sql = "SELECT MicroServiceChainLinks.pk FROM StandardTasksConfigs JOIN TasksConfigs ON TasksConfigs.taskTypePKReference = StandardTasksConfigs.pk JOIN MicroServiceChainLinks ON MicroServiceChainLinks.currentTask = TasksConfigs.pk WHERE ( execute LIKE 'moveSIP%%' OR execute LIKE 'moveTransfer%%') AND taskType = '36b2e239-4a57-4aa5-8ebc-7a29139baca6' AND arguments like '%%%s%%';" % (watchedDirectoryPath.replace('%watchDirectoryPath%', '%sharedPath%watchedDirectories/', 1).replace('%', '\%'))
+        sql = "SELECT MicroServiceChainLinks.pk FROM StandardTasksConfigs JOIN TasksConfigs ON TasksConfigs.taskTypePKReference = StandardTasksConfigs.pk JOIN MicroServiceChainLinks ON MicroServiceChainLinks.currentTask = TasksConfigs.pk WHERE execute LIKE 'move%%' AND taskType = '36b2e239-4a57-4aa5-8ebc-7a29139baca6' AND arguments like '%%%s%%';" % (watchedDirectoryPath.replace('%watchDirectoryPath%', '%sharedPath%watchedDirectories/', 1).replace('%', '\%'))
         rows2 = databaseInterface.queryAllSQL(sql)
         for row2 in rows2:
             microServiceChainLink = row2[0]
