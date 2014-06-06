@@ -19,6 +19,6 @@ install-makedirs:
 install-doc:
 	install doc/am.1 $(DESTDIR)$(mandir)
 
-install: am install-makedirs install-doc
+install: am doc install-makedirs install-doc
 	install bin/am $(DESTDIR)$(bindir)
 	install tools/* $(DESTDIR)$(libexecdir)
