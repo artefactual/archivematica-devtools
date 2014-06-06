@@ -1,0 +1,15 @@
+Source: archivematica-devtools
+Section: utils
+Priority: extra
+Maintainer: Misty De Meo <mdemeo@artefactual.com>
+Build-Depends: debhelper (>= 9), ruby-ronn
+Standards-Version: 3.9.3
+Homepage: https://www.archivematica.org/
+
+Package: archivematica-devtools
+Architecture: all
+Depends: ${misc:Depends}, ${python:Depends}, python, archivematica-dashboard
+Description: Developer tools for Archivematica
+ This package contains a set of developer tools intended to help administrate
+ an installation of Archivematica. They can also be useful for systems
+ administrators in controlling production Archivematica installations.
