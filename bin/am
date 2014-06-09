@@ -3,6 +3,11 @@
 prefix="@PREFIX@"
 
 case $1 in
+	'')
+		echo "Usage: am <tool>"
+		echo "To list all tools: am ls-tools"
+		exit 1
+		;;
 	ls-tools)
 		ls "$prefix" 2>/dev/null
 		;;
