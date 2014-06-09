@@ -1,3 +1,9 @@
+archivematica-devtools (0.0-2) precise; urgency=low
+
+  * Fix a minor bug in the wrapper script
+
+ -- Misty De Meo <mdemeo@artefactual.com>  Mon, 09 Jun 2014 16:13:16 -0700
+
 archivematica-devtools (0.0-1) precise; urgency=low
 
   * Initial import (prerelease; future releases will follow standardized numbering)
