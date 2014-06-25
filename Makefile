@@ -10,6 +10,7 @@ am:
 
 doc:
 	ronn -r doc/am.1.md
+	ronn -r doc/am-linktool.1.md
 
 install-makedirs:
 	install -d $(DESTDIR)$(bindir)
@@ -17,7 +18,7 @@ install-makedirs:
 	install -d $(DESTDIR)$(mandir)
 
 install-doc:
-	install doc/am.1 $(DESTDIR)$(mandir)
+	install doc/* $(DESTDIR)$(mandir)
 
 install: am doc install-makedirs install-doc
 	install bin/am $(DESTDIR)$(bindir)
