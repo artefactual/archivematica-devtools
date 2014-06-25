@@ -7,7 +7,7 @@ In the past, these tools were contained in the primary Archivematica repository;
 While these are primarily intended for use in development, Archivematica systems administrators may find them useful in debugging Archivematica installations.
 
 USAGE
-=====
+-----
 
 A tool called `am` is provided as a launcher for the different tools in this package. To call a tool, run `am toolname`, e.g. `am linktool`.
 All of the available tools can be listed by running `am ls-tools`.
@@ -15,27 +15,25 @@ More detailed documentation is available in the `am` manpage.
 Manpages are available for certain tools provided in this package as well.
 
 REQUIREMENTS
-============
+------------
 
-Build
------
+### Build
 
 * [ronn](http://rtomayko.github.io/ronn/) (installed via Rubygems, or ruby-ronn in Ubuntu/Debian)
 
-Runtime
--------
+### Runtime
 
 * Python 2.7
 * Active Archivematica installation with an installed, accessible database
 
 INSTALLATION
-============
+------------
 
 A makefile is provided; `make install` will build the package and install to /usr/local.
 The prefix can be customized by passing the `PREFIX` make variable (for instance, `make install PREFIX=/opt/archivematica`), and the tool installation directory can be changed by passing the `libexecdir` make variable.
 
 TOOLS PROVIDED
-==============
+--------------
 
 * linktool: Assists in generating SQL to create new microservice chainlinks, or to access information about links in the database.
 * graph-links: Generate a graph of all microservice chainlinks in an Archivematica database.
