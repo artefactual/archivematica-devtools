@@ -13,6 +13,7 @@ case $1 in
 		;;
 	*)
 		tool="$prefix/$1"
+		shift 1 # so we don't pass on the tool name to the tool itself
 		test -x "$tool" && exec "$tool" "$@"
 		echo "Tool not found: $1" && exit 1
 		;;
