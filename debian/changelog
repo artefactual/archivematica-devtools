@@ -1,3 +1,9 @@
+archivematica-devtools (0.0-3) precise; urgency=low
+
+  * Don't pass along tool names in argv
+
+ -- Misty De Meo <mdemeo@artefactual.com>  Mon, 07 Jul 2014 14:35:12 -0700
+
 archivematica-devtools (0.0-2) precise; urgency=low
 
   * Fix a minor bug in the wrapper script
