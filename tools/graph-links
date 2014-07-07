@@ -51,14 +51,14 @@ def addArrow(sourceUUID, destUUID, color="black", label=None):
 
 
 def loadAllLinks():
-    sql = """SELECT MicroServiceChainLinks.pk, MicroServiceChainLinks.defaultNextChainLink, TasksConfigs.description, TaskTypes.description, TasksConfigs.taskTypePKReference
+    sql = """SELECT MicroServiceChainLinks.pk, MicroServiceChainLinks.defaultNextChainLink, TasksConfigs.description, TaskTypes.description, TasksConfigs.taskTypePKReference, microserviceGroup
         FROM MicroServiceChainLinks
         JOIN TasksConfigs ON currentTask = TasksConfigs.pk
         JOIN TaskTypes ON taskType = TaskTypes.pk
         WHERE TasksConfigs.taskType != '5e70152a-9c5b-4c17-b823-c9298c546eeb';"""
     links = databaseInterface.queryAllSQL(sql)
     for link in links:
-        pk, defaultNextChainLink, description, taskType, pkRef = link
+        pk, defaultNextChainLink, description, taskType, pkRef, group = link
         if pk in excludedNodes:
             continue
         sql = """SELECT execute FROM StandardTasksConfigs WHERE pk='%s';""" % pkRef
@@ -70,7 +70,11 @@ def loadAllLinks():
             returned = databaseInterface.queryAllSQL(sql)
             if returned:
                 script_name = '%s, %s' % (returned[0][0], returned[0][1] or returned[0][2])
-        nodeName = r"{%s} %s\n(%s) %s\n[%s]" % (pk, description, taskType, pkRef, script_name or '')
+        # Node info:
+        # {MSCL UUID} Name of node
+        # (task type description) taskTypePKReference
+        # [Name of script] Microservice Group
+        nodeName = r"{%s} %s\n(%s) %s\n[%s] %s" % (pk, description, taskType, pkRef, script_name or '', group)
         # Color if start of chain
         border_color = 'black'
         sql = """SELECT * FROM MicroServiceChains WHERE startingLink='%s';""" % pk
