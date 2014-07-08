@@ -285,7 +285,7 @@ def insert_link_before_link(link_uuid):
     chain_uuid, _ = get_chain_info(link_uuid)
     if chain_uuid:
         # must update chain row to insert new link
-        sql = """UPDATE MicroServiceChains SET startingLink='%s' WHERE startingLink='%s';""" % (new_link_uuid, chain_uuid)
+        sql = """UPDATE MicroServiceChains SET startingLink='%s' WHERE pk='%s';""" % (new_link_uuid, chain_uuid)
         sql_commands += sql + "\n"
 
     print sql_commands
