@@ -49,6 +49,13 @@ def main(pronom_xml):
     formats = etree.parse(pronom_xml)
     for format in formats.getroot():
         puid = format.find('.puid').text
+        # fmt/111 is "OLE2 Compound Document Format".
+        # Many Windows file formats that aren't otherwise IDed will
+        # be identified as this. We choose not to import this one
+        # ID in order to allow Archivematica to recognize those files
+        # as unidentified instead of returning something misleading.
+        if puid == "fmt/111":
+            continue
         # If a FormatVersion with this PUID already exists,
         # we don't want to do anything.
         try:
