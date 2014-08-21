@@ -1,0 +1,22 @@
+#!/bin/bash
+
+sudo stop archivematica-mcp-server
+sudo stop archivematica-mcp-client
+sudo stop fits
+sudo /etc/init.d/gearman-job-server stop
+sudo /etc/init.d/elasticsearch stop
+sleep 1
+
+if [ -e "/tmp/archivematicaMCPServerPID" ]
+then
+  sudo kill -9 $(cat /tmp/archivematicaMCPServerPID)
+fi
+
+sleep 3
+sudo /etc/init.d/elasticsearch start
+sudo /etc/init.d/gearman-job-server start
+sudo rm /tmp/archivematicaMCP*
+sudo start fits
+sudo start archivematica-mcp-server
+sudo start archivematica-mcp-client
+sudo apache2ctl restart
