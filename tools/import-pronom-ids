@@ -75,7 +75,7 @@ def main(pronom_xml):
                     description=new_format.format_name,
                     group=unknown_format_group
                 )
-                print(save_object(parent_format))
+                print(save_object(parent_format), ";")
                 archivematica_formats[new_format.format_name] = parent_format
 
         format_version = FormatVersion(
@@ -84,7 +84,7 @@ def main(pronom_xml):
             description=new_format.version_name,
             version=new_format.version
         )
-        print(save_object(format_version))
+        print(save_object(format_version), ";")
 
         # If an extension is listed, set up a new IDRule so that
         # the `Files by Extension` IDCommand can find them.
@@ -100,7 +100,7 @@ def main(pronom_xml):
                     command=file_by_extension,
                     command_output=new_format.extension
                 )
-                print(save_object(rule))
+                print(save_object(rule), ";")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Import formats from PRONOM')
