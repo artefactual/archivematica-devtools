@@ -11,24 +11,28 @@ from elasticSearchFunctions import getElasticsearchServerHostAndPort
 
 conn = Elasticsearch(hosts=getElasticsearchServerHostAndPort())
 
-records = conn.search(index='transfers', doc_type='transferfile', ignore=404)
-if not 'error' in records:
-    records_to_send = {}
-    # arrange transfer files into sets based on their transfer of origin
-    for f in records['hits']['hits']:
-        sipuuid = f['_source']['sipuuid']
-        if sipuuid not in records_to_send:
-            records_to_send[sipuuid] = []
+records_retrieved = 0
+count = conn.count(index='transfers', doc_type='transferfile', ignore_unavailable=True)['count']
+while records_retrieved < count:
+    records = conn.search(index='transfers', doc_type='transferfile', size=50000, from_=records_retrieved, ignore=404)
+    records_retrieved += len(records['hits']['hits'])
+    if 'error' not in records:
+        records_to_send = {}
+        # arrange transfer files into sets based on their transfer of origin
+        for f in records['hits']['hits']:
+            sipuuid = f['_source']['sipuuid']
+            if sipuuid not in records_to_send:
+                records_to_send[sipuuid] = []
 
-        records_to_send[sipuuid].append(f['_source'])
+            records_to_send[sipuuid].append(f['_source'])
 
-    for sipuuid, file_set in records_to_send.iteritems():
-        print("Removing existing file records for transfer {}".format(sipuuid))
-        try:
-            storage_service.remove_files_from_transfer(sipuuid)
-        except Exception as e:
-            if e.response.status_code == 404:
-                print("No transfer found for UUID \"{}\" (not present in this Storage Service?); not indexing files".format(sipuuid), file=sys.stderr)
-                continue
-        print("Indexing {} files in transfer {}...".format(len(file_set), sipuuid))
-        storage_service.index_backlogged_transfer_contents(sipuuid, file_set)
+        for sipuuid, file_set in records_to_send.iteritems():
+            print("Removing existing file records for transfer {}".format(sipuuid))
+            try:
+                storage_service.remove_files_from_transfer(sipuuid)
+            except Exception as e:
+                if e.response.status_code == 404:
+                    print("No transfer found for UUID \"{}\" (not present in this Storage Service?); not indexing files".format(sipuuid), file=sys.stderr)
+                    continue
+            print("Indexing {} files in transfer {}...".format(len(file_set), sipuuid))
+            storage_service.index_backlogged_transfer_contents(sipuuid, file_set)
