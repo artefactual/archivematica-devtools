@@ -8,8 +8,10 @@ import sys
 sys.path.append('/usr/share/archivematica/dashboard')
 os.environ["DJANGO_SETTINGS_MODULE"] = "settings.local"
 
+import django
 from django.db import connection
 
+django.setup()
 from fpr.models import IDCommand, IDRule, IDTool, Format, FormatGroup, FormatVersion, FPCommand, FPRule, FPTool
 
 FORMAT_FIELDS = (

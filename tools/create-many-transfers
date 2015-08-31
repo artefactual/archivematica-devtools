@@ -6,9 +6,14 @@ import shutil
 import subprocess
 import sys
 import time
+
+import django
+
 sys.path.append('/usr/share/archivematica/dashboard')
 os.environ['DJANGO_SETTINGS_MODULE'] = 'settings.common'
 from contrib.mcp.client import MCPClient
+
+django.setup()
 from main.models import Transfer, Job
 
 
