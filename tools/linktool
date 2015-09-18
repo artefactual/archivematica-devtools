@@ -44,6 +44,10 @@ def get_previous_links(link_uuid):
     sql = """SELECT microServiceChainLink FROM MicroServiceChainLinksExitCodes WHERE nextMicroServiceChainLink='%s' and exitCode=0""" % (link_uuid)
     return simple_multi_value_query(sql)
 
+def get_link_choices(link_uuid):
+    sql = """SELECT pk FROM MicroServiceChainChoice WHERE choiceAvailableAtLink='%s'""" % (link_uuid)
+    return simple_multi_value_query(sql)
+
 def get_link_property(link_uuid, property):
     sql = "SELECT " + property + " FROM MicroServiceChainLinks WHERE pk='%s'" % (link_uuid)
     return simple_value_query(sql)
@@ -86,6 +90,17 @@ def link_exists(link_uuid):
 
 def link_for_display(link_uuid, indent=''):
     return indent + link_uuid + ' (' + get_link_task_description(link_uuid) + ')'
+
+def choice_for_display(choice_uuid, indent=''):
+    # get choice available
+    sql = """SELECT chainAvailable FROM MicroServiceChainChoice WHERE pk='%s'""" % (choice_uuid)
+    chain_available = simple_value_query(sql)
+
+    # get chain description
+    sql = """SELECT description FROM MicroServiceChains WHERE pk='%s'""" % (chain_available)
+    chain_description = simple_value_query(sql)
+
+    return indent + choice_uuid + ' (chain ' + chain_available + ': ' + chain_description + ')'
 
 def get_link_task_description(link_uuid):
     sql = """SELECT currentTask FROM MicroServiceChainLinks WHERE pk='%s'""" % (link_uuid)
@@ -240,14 +255,25 @@ def show_link_info(link_uuid, show_all_groups=False):
         print '    Arguments: ' + str(std_task_arguments)
     print
 
-    print 'Previous links: '
-    print_nested_lists(previous_links_list, indent, show_all_groups)
+    if previous_links_list:
+        print 'Previous links: '
+        print_nested_lists(previous_links_list, indent, show_all_groups)
 
-    print
+        print
 
-    print 'Next links: '
-    for link in next_links:
-        print link_for_display(link, indent)
+    if next_links:
+        print 'Next links: '
+        for link in next_links:
+            print link_for_display(link, indent)
+
+        print
+
+    choice_list = get_link_choices(link_uuid)
+
+    if choice_list:
+       print 'Choices: '
+       for choice in choice_list:
+           print choice_for_display(choice, indent)
 
 def insert_link_before_link(link_uuid):
     if not link_exists(link_uuid):
