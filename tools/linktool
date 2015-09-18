@@ -400,9 +400,9 @@ if __name__ == '__main__':
             'usage':       'info <link UUID>',
             'description': 'show other links in the same microservice group'
         },
-        'chaininfo': {
+        'siblings': {
             'function':    show_link_chain_info,
-            'usage':       'chaininfo <link UUID>',
+            'usage':       'siblings <link UUID>',
             'description': 'show other links in the same chain'
         },
         'insertbefore': {
