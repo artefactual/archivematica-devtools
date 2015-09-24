@@ -1,10 +1,13 @@
 #!/bin/bash
 
+sudo service gearman-job-server stop
 sudo stop archivematica-mcp-server
 sudo stop archivematica-mcp-client
 sudo stop fits
-sudo stop gearman-job-server
-sudo /etc/init.d/elasticsearch stop
+sudo service elasticsearch stop
+sudo service apache2 stop
+sudo service nginx stop
+sudo service uwsgi stop
 sleep 1
 
 if [ -e "/tmp/archivematicaMCPServerPID" ]
@@ -13,10 +16,11 @@ then
 fi
 
 sleep 3
-sudo /etc/init.d/elasticsearch start
-sudo start gearman-job-server
-sudo rm /tmp/archivematicaMCP*
+sudo service elasticsearch start
+sudo service gearman-job-server start
 sudo start fits
+sudo service nginx start
+sudo service uwsgi start
 sudo start archivematica-mcp-server
 sudo start archivematica-mcp-client
-sudo apache2ctl restart
+sudo service apache2 start
