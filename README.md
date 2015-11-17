@@ -42,6 +42,7 @@ TOOLS PROVIDED
 * rebuild-elasticsearch tools: Various tools to rebuild specific Elasticsearch indices.
 * reindex-aip-data: Delete and recreate the AIP index, reindexing all existing records.
   This can be used to migrate data when an incompatible schema change occurs.
+* reindex-backlogged-transfers: Seeds the Storage Service with information about all transfers in the transfer backlog.
 * stress-test-aip-indexing: Stress test Elasticsearch AIP indexing by repeatedly indexing test data.
 * sword-diagnose: Attempt to detect any issues in AtoM/SWORD configuration when setting up DIP upload to an AtoM instance.
 

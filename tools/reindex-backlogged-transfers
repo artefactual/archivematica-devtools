@@ -4,6 +4,7 @@ from __future__ import print_function
 import sys
 
 from elasticsearch import Elasticsearch
+import elasticsearch.helpers
 
 sys.path.append('/usr/lib/archivematica/archivematicaCommon')
 import storageService as storage_service
@@ -11,28 +12,53 @@ from elasticSearchFunctions import getElasticsearchServerHostAndPort
 
 conn = Elasticsearch(hosts=getElasticsearchServerHostAndPort())
 
-records_retrieved = 0
-count = conn.count(index='transfers', doc_type='transferfile', ignore_unavailable=True)['count']
-while records_retrieved < count:
-    records = conn.search(index='transfers', doc_type='transferfile', size=50000, from_=records_retrieved, ignore=404)
-    records_retrieved += len(records['hits']['hits'])
-    if 'error' not in records:
-        records_to_send = {}
-        # arrange transfer files into sets based on their transfer of origin
-        for f in records['hits']['hits']:
-            sipuuid = f['_source']['sipuuid']
-            if sipuuid not in records_to_send:
-                records_to_send[sipuuid] = []
+query = {
+    'aggs': {'transfer_uuids': {'terms': {'field': 'sipuuid', 'size': 0}}},
+    'size': 0,
+}
 
-            records_to_send[sipuuid].append(f['_source'])
+results = conn.search(
+    body=query,
+    index='transfers',
+    doc_type='transferfile',
+)
 
-        for sipuuid, file_set in records_to_send.iteritems():
-            print("Removing existing file records for transfer {}".format(sipuuid))
-            try:
-                storage_service.remove_files_from_transfer(sipuuid)
-            except Exception as e:
-                if e.response.status_code == 404:
-                    print("No transfer found for UUID \"{}\" (not present in this Storage Service?); not indexing files".format(sipuuid), file=sys.stderr)
-                    continue
-            print("Indexing {} files in transfer {}...".format(len(file_set), sipuuid))
-            storage_service.index_backlogged_transfer_contents(sipuuid, file_set)
+uuids = [bucket['key'] for bucket in results['aggregations']['transfer_uuids']['buckets']]
+
+for transfer_uuid in uuids:
+    query = {
+        'query': {
+            'term': {
+                'sipuuid': transfer_uuid,
+            }
+        }
+    }
+    # A scan produces an unsorted set of all records matching the query,
+    # which can be iterated over using multiple queries without redoing
+    # the search. This provides us a way to reliably fetch all files
+    # within a given transfer.
+    # The elasticsearch.helpers.scan function is a helper that abstracts
+    # this by providing an iterator that iterates over every record in the
+    # set.
+    iterator = elasticsearch.helpers.scan(
+        conn,
+        query=query,
+        # The amount of time the record set should remain in memory
+        # on the ES server; the operation needs to be finished within
+        # this time. 15m is probably generous even for large transfers.
+        scroll='15m',
+        index='transfers',
+        doc_type='transferfile',
+    )
+    # Produce a flat, in-memory list from the iterator
+    record_set = [r['_source'] for r in iterator]
+
+    print("Removing existing file records for transfer {}".format(transfer_uuid))
+    try:
+        storage_service.remove_files_from_transfer(transfer_uuid)
+    except Exception as e:
+        if e.response.status_code == 404:
+            print("No transfer found for UUID \"{}\" (not present in this Storage Service?); not indexing files".format(transfer_uuid), file=sys.stderr)
+            continue
+    print("Indexing {} files in transfer {}...".format(len(record_set), transfer_uuid))
+    storage_service.index_backlogged_transfer_contents(transfer_uuid, record_set)
