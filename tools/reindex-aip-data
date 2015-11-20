@@ -1,0 +1,35 @@
+#!/usr/bin/python2
+
+from __future__ import print_function
+import sys
+
+from elasticsearch import Elasticsearch, NotFoundError
+import elasticsearch.helpers
+
+sys.path.append('/usr/lib/archivematica/archivematicaCommon')
+import elasticSearchFunctions
+
+conn = Elasticsearch(hosts=elasticSearchFunctions.getElasticsearchServerHostAndPort())
+
+try:
+    mapping = conn.indices.get_mapping('aips')
+except NotFoundError:
+    print("No aips mapping exists - exiting", file=sys.stderr)
+    sys.exit(1)
+
+aip_records = [r['_source'] for r
+               in elasticsearch.helpers.scan(conn, index='aips', doc_type='aip', scroll='15m')]
+aipfile_records = [r['_source'] for r
+                   in elasticsearch.helpers.scan(conn, index='aips', doc_type='aipfile', scroll='15m')]
+
+conn.indices.delete_mapping(index='aips', doc_type='aip')
+conn.indices.delete_mapping(index='aips', doc_type='aipfile')
+elasticSearchFunctions.connect_and_create_index('aips')
+
+print('Indexing {} aips/aip records'.format(len(aip_records)))
+for r in aip_records:
+    conn.index(body=r, index='aips', doc_type='aip')
+
+print('Indexing {} aips/aipfile records'.format(len(aipfile_records)))
+for r in aipfile_records:
+    conn.index(body=r, index='aips', doc_type='aipfile')

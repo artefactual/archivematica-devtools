@@ -40,6 +40,8 @@ TOOLS PROVIDED
 * create-many-transfers: Stress test an Archivematica instance by starting many transfers at once.
 * extract-mets-files-from-aips: Extract METS files from all AIPs in a given path.
 * rebuild-elasticsearch tools: Various tools to rebuild specific Elasticsearch indices.
+* reindex-aip-data: Delete and recreate the AIP index, reindexing all existing records.
+  This can be used to migrate data when an incompatible schema change occurs.
 * stress-test-aip-indexing: Stress test Elasticsearch AIP indexing by repeatedly indexing test data.
 * sword-diagnose: Attempt to detect any issues in AtoM/SWORD configuration when setting up DIP upload to an AtoM instance.
 
