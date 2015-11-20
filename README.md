@@ -39,6 +39,8 @@ TOOLS PROVIDED
 * graph-links: Generate a graph of all microservice chainlinks in an Archivematica database.
 * create-many-transfers: Stress test an Archivematica instance by starting many transfers at once.
 * extract-mets-files-from-aips: Extract METS files from all AIPs in a given path.
+* gearman-info: Lists all running Gearman workers.
+* mcp-rpc-cli: Simple commandline interface to monitor running Archivematica tasks and select processing choices.
 * rebuild-elasticsearch tools: Various tools to rebuild specific Elasticsearch indices.
 * reindex-aip-data: Delete and recreate the AIP index, reindexing all existing records.
   This can be used to migrate data when an incompatible schema change occurs.
