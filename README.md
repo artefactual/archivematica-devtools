@@ -73,10 +73,13 @@ Edges are labelled with the user choice or exit code that connects those nodes, 
 * Black: "normal" progress
   * Source: `MicroServiceChainLinks.pk`
   * Destination: `MicroServiceChainLinks.defaultNextChainLink` or `MicroServiceChainLinksExitCodes.nextMicroServiceChainLink`
+* Red: Exit code greater than zero
+  * Source: `MicroServiceChainLinksExitCodes.exitCode`
+  * Destination: `MicroServiceChainLinksExitCodes.nextMicroServiceChainLink`
 * Green: User selection
   * Source: `MicroServiceChainChoice.choiceAvailableAtLink`
   * Destination: `MicroServiceChains.startingLink`
-* Yellow: WatchedDirectories
+* Cyan: WatchedDirectories
   * Source: `MicroServiceChainLinks.pk` where the `StandardTasksConfig` has `execute` as `move` and the watched directory path in the `arguments`
   * Destination: `WatchedDirectories.chain`
 * Orange: Unit variables
