@@ -22,6 +22,7 @@ import datetime
 import sys
 import logging
 import argparse
+import ConfigParser
 
 import pygraphviz as pgv
 
@@ -35,10 +36,24 @@ databaseInterface.printSQL = False
 linkUUIDtoNodeName = {}
 
 excludedNodes = {
-    '61c316a6-0a50-4f65-8767-1f44b1eeb6dd': "default fail procedure for transfers. Too many lines",
-    '7d728c39-395f-4892-8193-92f086c0546f': "default fail procedure for SIPs. Too many lines",
-    '333532b9-b7c2-4478-9415-28a3056d58df': "reject transfer option.",
-    '19c94543-14cb-4158-986b-1d2b55723cd8': "reject sip option."}
+    '61c316a6-0a50-4f65-8767-1f44b1eeb6dd': 'default fail procedure for transfers. Too many lines',
+    '7d728c39-395f-4892-8193-92f086c0546f': 'default fail procedure for SIPs. Too many lines',
+    '333532b9-b7c2-4478-9415-28a3056d58df': 'reject transfer option.',
+    '19c94543-14cb-4158-986b-1d2b55723cd8': 'reject sip option',
+}
+
+# See http://www.graphviz.org/doc/info/colors.html
+COLORS = {
+    'node_chain_link': 'black',
+    'node_chain_link_start': 'darkgoldenrod',
+    'edge_exit_codes_ok': 'black',
+    'edge_exit_codes_err': 'red',
+    'edge_user_selections': 'green',
+    'edge_watched_directories': 'cyan3',
+    'edge_load_variable': 'orangered',
+    'edge_magic_chain_links': 'brown',
+}
+
 
 # For each MicroServiceChainLink in the MCP Server, the TaskType determines
 # what code will be executed for that task.
@@ -95,6 +110,18 @@ TASK_TYPES = {
 logging.basicConfig(format='%(message)s', stream=sys.stdout)
 logger = logging.getLogger()
 
+config = ConfigParser.ConfigParser()
+config.read('/etc/archivematica/MCPClient/archivematicaClientModules')
+
+
+def get_script_name(name):
+    if not isinstance(name, basestring):
+        return
+    if config.has_option('supportedCommandsSpecial', name):
+        return config.get('supportedCommandsSpecial', name)
+    if config.has_option('supportedCommands', name):
+        return config.get('supportedCommands', name)
+
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
@@ -105,7 +132,7 @@ def parse_arguments():
     return args
 
 
-def add_edge(G, sourceUUID, destUUID, color="black", label=None):
+def add_edge(G, sourceUUID, destUUID, color='black', label=None):
     if sourceUUID in excludedNodes or destUUID in excludedNodes:
         return
     if sourceUUID is None or destUUID is None:
@@ -167,15 +194,17 @@ def load_chain_links(G):
         # [Name of script] Microservice Group
         nodeName = r"{%s} %s\n(%s) %s\n[%s] %s" % (pk, description, taskType, pkRef, script_name or '', group)
         # Color if start of chain
-        border_color = 'black'
+        border_color = COLORS['node_chain_link']
         sql = """
             SELECT *
             FROM MicroServiceChains
             WHERE startingLink=%s;
         """
         if databaseInterface.queryAllSQL(sql, (pk,)):
-            border_color = 'darkgoldenrod'
-        tooltip = 'Arguments: {}'.format(arguments) if arguments is not None else 'No arguments'
+            border_color = COLORS['node_chain_link_start']
+        full_script_name = get_script_name(script_name)
+        tooltip = 'Script name: {}. \n'.format(full_script_name) if full_script_name else 'Full script name not found. '
+        tooltip += 'Arguments: {}'.format(arguments) if arguments is not None else 'No arguments'
         G.add_node(nodeName, label=nodeName, id=nodeName, color=border_color, tooltip=tooltip)
         linkUUIDtoNodeName[pk] = nodeName
     for link in links:
@@ -204,7 +233,7 @@ def bridgeExitCodes(G):
     for row in rows:
         microServiceChainLink, nextMicroServiceChainLink, exit_code = row
         if nextMicroServiceChainLink:
-            color = 'green' if not exit_code else 'red'
+            color = COLORS['edge_exit_codes_ok'] if not exit_code else COLORS['edge_exit_codes_err']
             add_edge(G, microServiceChainLink, nextMicroServiceChainLink, label='EXITCODE={}'.format(exit_code), color=color)
 
 
@@ -226,7 +255,7 @@ def bridgeUserSelections(G):
     for row in rows:
         choiceAvailableAtLink, startingLink, description = row
         if choiceAvailableAtLink and startingLink:
-            add_edge(G, choiceAvailableAtLink, startingLink, color='blue', label=description)
+            add_edge(G, choiceAvailableAtLink, startingLink, color=COLORS['edge_user_selections'], label=description)
 
 
 def bridgeWatchedDirectories(G):
@@ -290,7 +319,7 @@ def bridgeWatchedDirectories(G):
         ))
         for row2 in rows2:
             microServiceChainLink, execute, arguments = row2
-            add_edge(G, microServiceChainLink, startingLink, color='yellow', label=watchedDirectoryPath)
+            add_edge(G, microServiceChainLink, startingLink, color=COLORS['edge_watched_directories'], label=watchedDirectoryPath)
             logger.debug('  MATCHED SOURCE:\n   -> %s \n   -> %s\n   -> %s', microServiceChainLink, execute, arguments)
             count += 1
 
@@ -337,7 +366,7 @@ def bridgeMagicChainLinksRecursiveAssist(G, node, magicLink, visitedNodes):
     ))
     # if it's loading it, set the load and return
     if len(rows):
-        add_edge(G, link, magicLink, color="brown")
+        add_edge(G, link, magicLink, color=COLORS['edge_magic_chain_links'])
         return 1
     else:
         for neigh in G.neighbors_iter(node):
@@ -381,10 +410,10 @@ def bridgeLoadVariable(G):
         ))
         for row2 in rows2:
             microServiceChainLink2, variable, microServiceChainLinkDest = row2
-            add_edge(G, microServiceChainLink, microServiceChainLinkDest, color="orangered", label=variable)
+            add_edge(G, microServiceChainLink, microServiceChainLinkDest, color=COLORS['edge_load_variable'], label=variable)
             count += 1
         if defaultMicroServiceChainLink:
-            add_edge(G, microServiceChainLink, defaultMicroServiceChainLink, color="orangered", label='default MSCL')
+            add_edge(G, microServiceChainLink, defaultMicroServiceChainLink, color=COLORS['edge_load_variable'], label='default MSCL')
         if count == 0:
             logger.info("No bridge variable set for %s", linkUUIDtoNodeName[microServiceChainLink])
 
@@ -403,11 +432,11 @@ def main():
     load_chain_links(G)
 
     # Edges
-    bridgeExitCodes(G)           # Green or red edges
-    bridgeUserSelections(G)      # Blue edges
-    bridgeWatchedDirectories(G)  # Yellow edges
-    bridgeLoadVariable(G)        # Orange edges
-    bridgeMagicChainLinks(G)     # Brown edges
+    bridgeExitCodes(G)
+    bridgeUserSelections(G)
+    bridgeWatchedDirectories(G)
+    bridgeLoadVariable(G)
+    bridgeMagicChainLinks(G)
 
     # HACK? Represent the connection of the transfer and the ingest chains.
     #
@@ -421,7 +450,7 @@ def main():
     #     > (one instance) 6157fe87-26ff-49da-9899-d9036b21c4b0
     #     > [setDirectoryPermissionsForAppraisal_v0.0] Verify SIP compliance
     #
-    add_edge(G, '3e75f0fa-2a2b-4813-ba1a-b16b4be4cac5', 'db6d3830-9eb4-4996-8f3a-18f4f998e07f', color='pink', label='Transfer -> Ingest (manual)')
+    add_edge(G, '3e75f0fa-2a2b-4813-ba1a-b16b4be4cac5', 'db6d3830-9eb4-4996-8f3a-18f4f998e07f', label='Transfer -> Ingest (manual)')
 
     G.layout(prog='dot')
 
@@ -431,7 +460,7 @@ def main():
     if args.verbose > 2:
         draw_args += "-v "
 
-    ret = 1    
+    ret = 1
     try:
         G.draw(filename, args=draw_args)
         ret = 0
