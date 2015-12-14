@@ -1,0 +1,55 @@
+#!/usr/bin/python2
+
+from __future__ import print_function
+import argparse
+import sys
+
+from elasticsearch import Elasticsearch, NotFoundError
+import elasticsearch.helpers
+
+sys.path.append('/usr/lib/archivematica/archivematicaCommon')
+import elasticSearchFunctions
+
+
+def reindex(index, doc_types):
+    """
+    Delete and recreate index/doc_types in Elasticsearch.
+
+    :param str index: Index to recreate
+    :param list doc_types: List of doc types to recreate
+    """
+    conn = Elasticsearch(hosts=elasticSearchFunctions.getElasticsearchServerHostAndPort())
+
+    try:
+        conn.indices.get_mapping(index)
+    except NotFoundError:
+        print("No", index, "mapping exists - exiting", file=sys.stderr)
+        return 1
+
+    doctype_records = {}
+    # Fetch all records, store in memory
+    for doc_type in doc_types:
+        doctype_records[doc_type] = [r['_source'] for r in elasticsearch.helpers.scan(conn, index=index, doc_type=doc_type, scroll='15m')]
+
+    # Delete exisitng index and recreate mapping
+    conn.indices.delete(index=index)
+    elasticSearchFunctions.connect_and_create_index(index)
+
+    # Reindex with the same data
+    for doc_type, records in doctype_records.items():
+        print('Indexing', len(records), index + '/' + doc_type, 'records.')
+        for r in records:
+            conn.index(body=r, index=index, doc_type=doc_type)
+        print('Done indexing', len(records), index + '/' + doc_type, 'records.')
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Regenerate index based on the existing data to update the index types.')
+    parser.add_argument('index', choices=['transfers', 'aips'], help='Index to re-generate.')
+    args = parser.parse_args()
+
+    index_doctypes = {
+        'transfers': ['transfer', 'transferfile'],
+        'aips': ['aip', 'aipfile'],
+    }
+
+    sys.exit(reindex(args.index, index_doctypes[args.index]))

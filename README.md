@@ -45,7 +45,7 @@ TOOLS PROVIDED
 * gearman-info: Lists all running Gearman workers.
 * mcp-rpc-cli: Simple commandline interface to monitor running Archivematica tasks and select processing choices.
 * rebuild-elasticsearch tools: Various tools to rebuild specific Elasticsearch indices.
-* reindex-aip-data: Delete and recreate the AIP index, reindexing all existing records.
+* reindex-index-data: Delete and recreate the AIP or Transfer index, reindexing all existing records.
   This can be used to migrate data when an incompatible schema change occurs.
 * reindex-backlogged-transfers: Seeds the Storage Service with information about all transfers in the transfer backlog.
 * stress-test-aip-indexing: Stress test Elasticsearch AIP indexing by repeatedly indexing test data.
@@ -91,3 +91,11 @@ Edges are labelled with the user choice or exit code that connects those nodes, 
 * Brown: Magic Links
   * Source: `MicroServiceChainLinks.pk` where taskType is 'goto magic link' (`6fe259c2-459d-4d4b-81a4-1b9daf7ee2e9`)
   * Destination: `Transfer.magicLink`. This is set by the most recent 'assign magic link' (`3590f73d-5eb0-44a0-91a6-5b2db6655889`)
+
+### reindex-index-data
+
+reindex-index-data will delete and re-index an ElasticSearch index, creating it with an updated mapping based on the currently installed Archivematica instance.
+This is useful if the mapping has changed in an incompatible way but the existing data should be preserved.
+Depending on the size of the index, a large amount of memory may be consumed.
+
+There is one parameter which specifies which index to recreate: `transfers` or `aips`.
