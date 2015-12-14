@@ -19,12 +19,15 @@ REQUIREMENTS
 
 ### Build
 
-* [ronn](http://rtomayko.github.io/ronn/) (installed via Rubygems, or ruby-ronn in Ubuntu/Debian)
+* [ronn](http://rtomayko.github.io/ronn/) (installed via Rubygems, or `ruby-ronn` in Ubuntu/Debian)
 
 ### Runtime
 
 * Python 2.7
 * Active Archivematica installation with an installed, accessible database
+* `graph-links`
+ * graphviz (`graphviz` `libgraphviz-dev` `python-pygraphviz` `pkg-config` in Ubuntu/Debian)
+ * [`pygraphviz`](https://pypi.python.org/pypi/pygraphviz)
 
 INSTALLATION
 ------------
