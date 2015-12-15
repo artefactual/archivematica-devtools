@@ -12,6 +12,12 @@ case $1 in
 		ls "$prefix" 2>/dev/null
 		;;
 	*)
+		export PYTHONPATH=$PYTHONPATH:/usr/share/archivematica/dashboard:/usr/lib/archivematica/archivematicaCommon
+		# respect DJANGO_SETTINGS_MODULE if set in the environment
+		if [ -z "$DJANGO_SETTINGS_MODULE" ]; then
+			export DJANGO_SETTINGS_MODULE="settings.local"
+		fi
+
 		tool="$prefix/$1"
 		shift 1 # so we don't pass on the tool name to the tool itself
 		test -x "$tool" && exec "$tool" "$@"
