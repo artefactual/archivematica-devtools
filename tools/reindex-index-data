@@ -4,7 +4,7 @@ from __future__ import print_function
 import argparse
 import sys
 
-from elasticsearch import Elasticsearch, NotFoundError
+from elasticsearch import Elasticsearch, ElasticsearchException, NotFoundError
 import elasticsearch.helpers
 
 sys.path.append('/usr/lib/archivematica/archivematicaCommon')
@@ -52,7 +52,11 @@ def reindex(index, doc_types):
     # Reindex with the same data
     for doc_type, records in doctype_records.items():
         print('Indexing', len(records), index + '/' + doc_type, 'records.')
-        elasticsearch.helpers.bulk(conn, index_iterator(records, index, doc_type))
+        try:
+            elasticsearch.helpers.bulk(conn, index_iterator(records, index, doc_type))
+        except ElasticsearchException as e:
+            print('Indexing failed for index {}, type {}, for reason: {}'.format(index, doc_type, e), file=sys.stderr)
+            continue
         print('Done indexing', len(records), index + '/' + doc_type, 'records.')
 
 if __name__ == '__main__':
