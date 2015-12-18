@@ -11,6 +11,20 @@ sys.path.append('/usr/lib/archivematica/archivematicaCommon')
 import elasticSearchFunctions
 
 
+def index_iterator(records, index, doc_type, action='index'):
+    """
+    Creates an iterator which yields dicts suitable for use with Elasticsearch's bulk operation API.
+    Used by `reindex` to transform a list of _source records into actions ready for indexing.
+    """
+    for record in records:
+        yield {
+            '_op_type': action,
+            '_index': index,
+            '_type': doc_type,
+            '_source': record,
+        }
+
+
 def reindex(index, doc_types):
     """
     Delete and recreate index/doc_types in Elasticsearch.
@@ -38,8 +52,7 @@ def reindex(index, doc_types):
     # Reindex with the same data
     for doc_type, records in doctype_records.items():
         print('Indexing', len(records), index + '/' + doc_type, 'records.')
-        for r in records:
-            conn.index(body=r, index=index, doc_type=doc_type)
+        elasticsearch.helpers.bulk(conn, index_iterator(records, index, doc_type))
         print('Done indexing', len(records), index + '/' + doc_type, 'records.')
 
 if __name__ == '__main__':
