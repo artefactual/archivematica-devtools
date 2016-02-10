@@ -23,15 +23,10 @@ import sys
 import logging
 import argparse
 import ConfigParser
+import MySQLdb
 
 import pygraphviz as pgv
 from lxml import etree
-
-# Quickest way to access to the MCP database but it assumes that you are
-# running this script in the machine where Archivematica was installed.
-sys.path.append("/usr/lib/archivematica/archivematicaCommon")
-import databaseInterface
-databaseInterface.printSQL = False
 
 
 linkUUIDtoNodeName = {}
@@ -107,6 +102,18 @@ TASK_TYPES = {
     'assign_magic_link': '3590f73d-5eb0-44a0-91a6-5b2db6655889',
 
 }
+
+def queryAllSQL(sql, arguments=None):
+    """ Ported and simplified from the now-deleted databaseInterface. """
+    database = MySQLdb.connect(read_default_file="/etc/archivematica/archivematicaCommon/dbsettings", charset="utf8", use_unicode = True, db='MCP')
+    database.autocommit(True)
+
+    if isinstance(sql, unicode):
+        sql = sql.encode('utf-8')
+
+    c = database.cursor()
+    c.execute(sql, arguments)
+    return c.fetchall()
 
 SVGPAN_SCRIPT = etree.CDATA("""
 // https://www.cyberz.org/projects/SVGPan/SVGPan.js
@@ -447,7 +454,7 @@ def load_chain_links(G):
         JOIN TasksConfigs ON currentTask = TasksConfigs.pk
         JOIN TaskTypes ON taskType = TaskTypes.pk;
     """
-    links = databaseInterface.queryAllSQL(sql)
+    links = queryAllSQL(sql)
     for link in links:
         pk, defaultNextChainLink, description, taskType, pkRef, group = link
         if pk in excludedNodes:
@@ -459,7 +466,7 @@ def load_chain_links(G):
             FROM StandardTasksConfigs
             WHERE pk=%s;
         """
-        script_name = databaseInterface.queryAllSQL(sql, (pkRef,))
+        script_name = queryAllSQL(sql, (pkRef,))
         arguments = None
         if script_name:
             script_name, arguments = script_name[0]
@@ -472,7 +479,7 @@ def load_chain_links(G):
                 FROM TasksConfigsSetUnitVariable
                 WHERE pk=%s;
             """
-            returned = databaseInterface.queryAllSQL(sql, (pkRef,))
+            returned = queryAllSQL(sql, (pkRef,))
             if returned:
                 script_name = '%s, %s' % (returned[0][0], returned[0][1] or returned[0][2])
         # Node info:
@@ -487,7 +494,7 @@ def load_chain_links(G):
             FROM MicroServiceChains
             WHERE startingLink=%s;
         """
-        if databaseInterface.queryAllSQL(sql, (pk,)):
+        if queryAllSQL(sql, (pk,)):
             border_color = COLORS['node_chain_link_start']
         full_script_name = get_script_name(script_name)
         tooltip = 'Script name: {}. \n'.format(full_script_name) if full_script_name else 'Full script name not found. '
@@ -516,7 +523,7 @@ def bridgeExitCodes(G):
         FROM MicroServiceChainLinksExitCodes;
     """
     logger.info('Processing exit codes...')
-    rows = databaseInterface.queryAllSQL(sql)
+    rows = queryAllSQL(sql)
     for row in rows:
         microServiceChainLink, nextMicroServiceChainLink, exit_code = row
         if nextMicroServiceChainLink:
@@ -538,7 +545,7 @@ def bridgeUserSelections(G):
         FROM MicroServiceChainChoice
         JOIN MicroServiceChains ON (MicroServiceChainChoice.chainAvailable = MicroServiceChains.pk);
     """
-    rows = databaseInterface.queryAllSQL(sql)
+    rows = queryAllSQL(sql)
     for row in rows:
         choiceAvailableAtLink, startingLink, description = row
         if choiceAvailableAtLink and startingLink:
@@ -578,7 +585,7 @@ def bridgeWatchedDirectories(G):
         FROM WatchedDirectories
         JOIN MicroServiceChains ON (WatchedDirectories.chain = MicroServiceChains.pk);
     """
-    rows = databaseInterface.queryAllSQL(sql)
+    rows = queryAllSQL(sql)
     for row in rows:
         watchedDirectoryPath, startingLink = row
         logger.debug("\nWatched directory [%s] [startingLink=%s]",
@@ -599,7 +606,7 @@ def bridgeWatchedDirectories(G):
                 AND taskType = %s
                 AND (arguments LIKE %s OR arguments LIKE %s);
         """
-        rows2 = databaseInterface.queryAllSQL(sql, (
+        rows2 = queryAllSQL(sql, (
             TASK_TYPES['one_instance'],
             '%{}%'.format(watchedDirectoryPath.replace('%', '\%')),
             '%{}%'.format(watchedDirectoryPath.replace('%watchDirectoryPath%', '%sharedPath%watchedDirectories/', 1).replace('%', '\%')),
@@ -625,7 +632,7 @@ def bridgeMagicChainLinks(G):
         JOIN TasksConfigsAssignMagicLink ON (TasksConfigsAssignMagicLink.pk = TasksConfigs.taskTypePKReference)
         WHERE TasksConfigs.taskType = %s;
     """
-    rows = databaseInterface.queryAllSQL(sql, (TASK_TYPES['assign_magic_link'],))
+    rows = queryAllSQL(sql, (TASK_TYPES['assign_magic_link'],))
     for row in rows:
         microServiceChainLink, magicLink = row
         node = G.get_node(linkUUIDtoNodeName[microServiceChainLink])
@@ -647,7 +654,7 @@ def bridgeMagicChainLinksRecursiveAssist(G, node, magicLink, visitedNodes):
             TasksConfigs.taskType = %s
             AND MicroServiceChainLinks.pk = %s;
     """
-    rows = databaseInterface.queryAllSQL(sql, (
+    rows = queryAllSQL(sql, (
         TASK_TYPES['assign_magic_link'],
         link,
     ))
@@ -675,7 +682,7 @@ def bridgeLoadVariable(G):
         JOIN TasksConfigsUnitVariableLinkPull ON (TasksConfigsUnitVariableLinkPull.pk = TasksConfigs.taskTypePKReference)
         WHERE TasksConfigs.taskType = %s;
     """
-    rows = databaseInterface.queryAllSQL(sql, (TASK_TYPES['unit_var_pull'],))
+    rows = queryAllSQL(sql, (TASK_TYPES['unit_var_pull'],))
     for row in rows:
         count = 0
         microServiceChainLink, variable, defaultMicroServiceChainLink = row
@@ -691,7 +698,7 @@ def bridgeLoadVariable(G):
                 TasksConfigs.taskType = %s
                 AND TasksConfigsSetUnitVariable.variable = %s;
         """
-        rows2 = databaseInterface.queryAllSQL(sql, (
+        rows2 = queryAllSQL(sql, (
             TASK_TYPES['unit_var'],
             variable,
         ))

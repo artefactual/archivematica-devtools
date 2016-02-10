@@ -20,9 +20,8 @@
 
 from optparse import OptionParser
 import sys
+import MySQLdb
 import uuid
-sys.path.append("/usr/lib/archivematica/archivematicaCommon")
-import databaseInterface
 
 ##
 ## Tool for inspecting microservice chain and rendering SQL for altering it
@@ -32,22 +31,33 @@ import databaseInterface
 # Internal helpers
 #
 
+def querySQL(sql, arguments=None):
+    """ Ported and simplified from the now-deleted databaseInterface. """
+    if isinstance(sql, unicode):
+        sql = sql.encode('utf-8')
+    database = MySQLdb.connect(read_default_file="/etc/archivematica/archivematicaCommon/dbsettings", charset="utf8", use_unicode = True, db='MCP')
+    database.autocommit(True)
+
+    c = database.cursor()
+    c.execute(sql, arguments)
+
+    return c
+
+
 def simple_multi_value_query(sql):
     """ Returns first item from each row as a list. """
     rows = []
-    c, sqlLock = databaseInterface.querySQL(sql)
+    c = querySQL(sql)
     row = c.fetchone()
     while row is not None:
         rows.append(row[0])
         row = c.fetchone()
-    sqlLock.release()
     return rows
 
 def simple_value_query(sql):
     """ Returns first item from first row of query. """
-    c, sqlLock = databaseInterface.querySQL(sql)
+    c = querySQL(sql)
     row = c.fetchone()
-    sqlLock.release()
 
     if row == None:
         return None
