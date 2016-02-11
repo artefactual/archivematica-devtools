@@ -48,12 +48,12 @@ def get_link_default_next_link(link_uuid):
     return simple_value_query(models.MicroServiceChainLink.objects.filter(pk=link_uuid), 'defaultnextchainlink_id')
 
 def get_link_default_next_link_and_prompt_if_nonexistant(link_uuid):
-    if link_uuid == None:
+    if link_uuid is None:
         default_next_chain_link = None
     else:
         default_next_chain_link = get_link_default_next_link(link_uuid)
 
-    if default_next_chain_link == None:
+    if default_next_chain_link is None:
         print 'Enter the UUID of a link that should be processed if an error occurs (defaultNextChainLink): '
         return raw_input()
 
@@ -137,7 +137,7 @@ def generate_task_config_sql_from_user_input(task_uuid, standard_task_uuid):
 
 def generate_exit_code_sql_from_user_input(exit_code_uuid, link_uuid, next_link_uuid=None):
 
-    if next_link_uuid == None:
+    if next_link_uuid is None:
         sql =  """INSERT INTO MicroServiceChainLinksExitCodes (pk, microServiceChainLink, exitCode, nextMicroServiceChainLink, exitMessage) VALUES ('%s', '%s', 0, NULL, 'Completed successfully');""" % (exit_code_uuid, link_uuid)
     else:
         sql = """INSERT INTO MicroServiceChainLinksExitCodes (pk, microServiceChainLink, exitCode, nextMicroServiceChainLink, exitMessage) VALUES ('%s', '%s', 0, '%s', 'Completed successfully');""" % (exit_code_uuid, link_uuid, next_link_uuid)
@@ -150,12 +150,12 @@ def generate_exit_code_sql_from_user_input(exit_code_uuid, link_uuid, next_link_
 def show_link_uuid_using_task_uuid(task_uuid):
     job_uuid = simple_value_query(models.Task.objects.filter(taskuuid=task_uuid), 'job_id')
 
-    if job_uuid == None:
+    if job_uuid is None:
         print "ERROR: Task not found."
     else:
         link_uuid = simple_value_query(models.Job.objects.filter(jobuuid=job_uuid), 'microservicechainlink_id')
 
-        if link_uuid == None:
+        if link_uuid is None:
             print "ERROR: Job for task not found."
         else:
             print "Link UUID: " + link_uuid
@@ -163,7 +163,7 @@ def show_link_uuid_using_task_uuid(task_uuid):
 def show_link_uuid_using_job_uuid(job_uuid):
     link_uuid = simple_value_query(models.Job.objects.filter(jobuuid=job_uuid), 'microservicechainlink_id')
 
-    if link_uuid == None:
+    if link_uuid is None:
         print "ERROR: Job not found."
     else:
         print "Link UUID: " + link_uuid
@@ -187,7 +187,7 @@ def show_link_info(link_uuid, show_all_groups=False):
     std_task_arguments = get_std_task_config_property(std_task_config_uuid, 'arguments')
 
     task_type_description = 'Type: ' + task_type_uuid
-    if task_type != None:
+    if task_type is not None:
         task_type_description = task_type_description + ', ' + task_type
 
     previous_links_list = []
@@ -196,7 +196,7 @@ def show_link_info(link_uuid, show_all_groups=False):
 
     next_links = []
     next_link = get_next_link(link_uuid)
-    while(next_link != None):
+    while(next_link is not None):
         next_link_group = get_link_microservice_group(next_link)
         if next_link_group == microservice_group or show_all_groups:
             next_links.append(next_link)
@@ -286,7 +286,7 @@ def insert_link_after_link(link_uuid):
     microservice_group = raw_input()
 
     default_next_link = get_link_default_next_link_and_prompt_if_nonexistant(link_uuid)
-    if link_after_target_link == None:
+    if link_after_target_link is None:
         sql = """INSERT INTO MicroServiceChainLinks(pk, microserviceGroup, defaultExitMessage, currentTask, defaultNextChainLink) values ('%s', '%s', 'Failed', '%s', '%s');""" % (new_link_uuid, microservice_group, task_uuid, default_next_link)
     else:
         sql = """INSERT INTO MicroServiceChainLinks(pk, microserviceGroup, defaultExitMessage, currentTask, defaultNextChainLink) values ('%s', '%s', 'Failed', '%s', '%s');""" % (new_link_uuid, microservice_group, task_uuid, default_next_link)
