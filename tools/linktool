@@ -3,8 +3,11 @@
 from optparse import OptionParser
 import sys
 import uuid
-sys.path.append("/usr/lib/archivematica/archivematicaCommon")
-import databaseInterface
+
+from main import models
+
+import django
+django.setup()
 
 ##
 ## Tool for inspecting microservice chain and rendering SQL for altering it
@@ -14,55 +17,35 @@ import databaseInterface
 # Internal helpers
 #
 
-def simple_multi_value_query(sql):
-    """ Returns first item from each row as a list. """
-    rows = []
-    c, sqlLock = databaseInterface.querySQL(sql)
-    row = c.fetchone()
-    while row is not None:
-        rows.append(row[0])
-        row = c.fetchone()
-    sqlLock.release()
-    return rows
+def simple_multi_value_query(qs, field):
+    return qs.values_list(field, flat=True)
 
-def simple_value_query(sql):
-    """ Returns first item from first row of query. """
-    c, sqlLock = databaseInterface.querySQL(sql)
-    row = c.fetchone()
-    sqlLock.release()
-
-    if row == None:
-        return None
-    else:
-        return row[0]
+def simple_value_query(qs, field):
+    try:
+        return getattr(qs[0], field)
+    except IndexError:
+        pass
 
 def get_next_link(link_uuid):
-    sql = """SELECT nextMicroServiceChainLink FROM MicroServiceChainLinksExitCodes WHERE microServiceChainLink='%s' AND exitCode=0""" % (link_uuid)
-    return simple_value_query(sql)
+    return simple_value_query(models.MicroServiceChainLinkExitCode.objects.filter(microservicechainlink=link_uuid, exitcode=0), 'nextmicroservicechainlink_id')
 
 def get_previous_links(link_uuid):
-    sql = """SELECT microServiceChainLink FROM MicroServiceChainLinksExitCodes WHERE nextMicroServiceChainLink='%s' and exitCode=0""" % (link_uuid)
-    return simple_multi_value_query(sql)
+    return simple_multi_value_query(models.MicroServiceChainLinkExitCode.objects.filter(nextmicroservicechainlink=link_uuid, exitcode=0), 'microservicechainlink_id')
 
 def get_link_property(link_uuid, property):
-    sql = "SELECT " + property + " FROM MicroServiceChainLinks WHERE pk='%s'" % (link_uuid)
-    return simple_value_query(sql)
+    return simple_value_query(models.MicroServiceChainLink.objects.filter(pk=link_uuid), property)
 
 def get_task_property(task_uuid, property):
-    sql = "SELECT " + property + " FROM TasksConfigs WHERE pk='%s'" % (task_uuid)
-    return simple_value_query(sql)
+    return simple_value_query(models.TaskConfig.objects.filter(pk=task_uuid), property)
 
 def get_task_type_property(task_type_uuid, property):
-    sql = "SELECT " + property + " FROM TaskTypes WHERE pk='%s'" % (task_type_uuid)
-    return simple_value_query(sql)
+    return simple_value_query(models.TaskType.objects.filter(pk=task_type_uuid), property)
 
 def get_std_task_config_property(config_uuid, property):
-    sql = "SELECT " + property + " FROM StandardTasksConfigs WHERE pk='%s'" % (config_uuid)
-    return simple_value_query(sql)
+    return simple_value_query(models.StandardTaskConfig.objects.filter(pk=config_uuid), property)
 
 def get_link_default_next_link(link_uuid):
-    sql = "SELECT defaultNextChainLink FROM MicroServiceChainLinks WHERE pk='%s'" % (link_uuid)
-    return simple_value_query(sql)
+    return simple_value_query(models.MicroServiceChainLink.objects.filter(pk=link_uuid), 'defaultnextchainlink_id')
 
 def get_link_default_next_link_and_prompt_if_nonexistant(link_uuid):
     if link_uuid == None:
@@ -77,30 +60,25 @@ def get_link_default_next_link_and_prompt_if_nonexistant(link_uuid):
     return default_next_chain_link
 
 def get_link_microservice_group(link_uuid):
-    sql = """SELECT microserviceGroup FROM MicroServiceChainLinks WHERE pk='%s'""" % (link_uuid)
-    return simple_value_query(sql)
+    return simple_value_query(models.MicroServiceChainLink.objects.filter(pk=link_uuid), 'microservicegroup')
 
 def link_exists(link_uuid):
-    sql = """SELECT pk FROM MicroServiceChainLinks WHERE pk='%s'""" % (link_uuid)
-    return simple_value_query(sql) != None
+    return simple_value_query(models.MicroServiceChainLink.objects.filter(pk=link_uuid), 'id') is not None
 
 def link_for_display(link_uuid, indent=''):
     return indent + link_uuid + ' (' + get_link_task_description(link_uuid) + ')'
 
 def get_link_task_description(link_uuid):
-    sql = """SELECT currentTask FROM MicroServiceChainLinks WHERE pk='%s'""" % (link_uuid)
-    task_config_uuid = simple_value_query(sql)
-
-    sql = """SELECT description FROM TasksConfigs WHERE pk='%s'""" % (task_config_uuid)
-    return simple_value_query(sql)
+    task_config_uuid = simple_value_query(models.MicroServiceChainLink.objects.filter(pk=link_uuid), 'currenttask_id')
+    return simple_value_query(models.TaskConfig.objects.filter(pk=task_config_uuid), 'description')
 
 def get_chain_info(first_link):
     """ Returns (uuid, description) for the chain if it exists, given the first link."""
-    sql = """SELECT description FROM MicroServiceChains WHERE startingLink='%s'""" % (first_link)
-    chain_description = simple_value_query(sql)
-    sql = """SELECT pk FROM MicroServiceChains WHERE startingLink='%s'""" % (first_link)
-    chain_uuid = simple_value_query(sql)
-    return (chain_uuid, chain_description)
+    try:
+        chain = models.MicroServiceChain.objects.filter(startinglink=first_link)[0]
+        return (chain.pk, chain.description)
+    except IndexError:
+        return (None, None)
 
 def get_previous_links_lists(previous_link, previous_links_list, show_all_groups, microservice_group):
     while(previous_link != []):
@@ -170,14 +148,12 @@ def generate_exit_code_sql_from_user_input(exit_code_uuid, link_uuid, next_link_
 #
 
 def show_link_uuid_using_task_uuid(task_uuid):
-    sql = """SELECT jobUUID FROM Tasks WHERE taskUUID='%s'""" % (task_uuid)
-    job_uuid = simple_value_query(sql)
+    job_uuid = simple_value_query(models.Task.objects.filter(taskuuid=task_uuid), 'job_id')
 
     if job_uuid == None:
         print "ERROR: Task not found."
     else:
-        sql = """SELECT MicroServiceChainLinksPK FROM Jobs WHERE jobUUID='%s'""" % (job_uuid)
-        link_uuid = simple_value_query(sql)
+        link_uuid = simple_value_query(models.Job.objects.filter(jobuuid=job_uuid), 'microservicechainlink_id')
 
         if link_uuid == None:
             print "ERROR: Job for task not found."
@@ -185,8 +161,7 @@ def show_link_uuid_using_task_uuid(task_uuid):
             print "Link UUID: " + link_uuid
 
 def show_link_uuid_using_job_uuid(job_uuid):
-    sql = """SELECT MicroServiceChainLinksPK FROM Jobs WHERE jobUUID='%s'""" % (job_uuid)
-    link_uuid = simple_value_query(sql)
+    link_uuid = simple_value_query(models.Job.objects.filter(jobuuid=job_uuid), 'microservicechainlink_id')
 
     if link_uuid == None:
         print "ERROR: Job not found."
@@ -203,11 +178,11 @@ def show_link_info(link_uuid, show_all_groups=False):
 
     microservice_group = get_link_microservice_group(link_uuid)
 
-    task_uuid = get_link_property(link_uuid, 'currentTask')
-    task_type_uuid = get_task_property(task_uuid, 'taskType')
+    task_uuid = get_link_property(link_uuid, 'currenttask_id')
+    task_type_uuid = get_task_property(task_uuid, 'tasktype_id')
     task_type = get_task_type_property(task_type_uuid, 'description')
 
-    std_task_config_uuid = get_task_property(task_uuid, 'taskTypePKReference')
+    std_task_config_uuid = get_task_property(task_uuid, 'tasktypepkreference')
     std_task_execute = get_std_task_config_property(std_task_config_uuid, 'execute')
     std_task_arguments = get_std_task_config_property(std_task_config_uuid, 'arguments')
 
