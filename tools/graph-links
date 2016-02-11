@@ -563,11 +563,11 @@ def bridgeWatchedDirectories(G):
                                                         execute__startswith='move',
                                                         id__in=tasks)
         for stc in stcs:
-            microServiceChainLink = models.MicroServiceChainLink.objects.get(currenttask__tasktypepkreference=stc.id).id
-
-            add_edge(G, microServiceChainLink, startingLink, color=COLORS['edge_watched_directories'], label=watchedDirectoryPath)
-            logger.debug('  MATCHED SOURCE:\n   -> %s \n   -> %s\n   -> %s', microServiceChainLink, stc.execute, stc.arguments)
-            count += 1
+            links = models.MicroServiceChainLink.objects.filter(currenttask__tasktypepkreference=stc.id).values_list('id', flat=True)
+            for microServiceChainLink in links:
+                add_edge(G, microServiceChainLink, startingLink, color=COLORS['edge_watched_directories'], label=watchedDirectoryPath)
+                logger.debug('  MATCHED SOURCE:\n   -> %s \n   -> %s\n   -> %s', microServiceChainLink, stc.execute, stc.arguments)
+                count += 1
 
         if count == 0:
             logger.info("No sources for watched directory: %s", watchedDirectoryPath)
