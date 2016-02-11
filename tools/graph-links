@@ -24,15 +24,14 @@ import logging
 import argparse
 import ConfigParser
 
+from django.db.models import Q
 import pygraphviz as pgv
 from lxml import etree
 
-# Quickest way to access to the MCP database but it assumes that you are
-# running this script in the machine where Archivematica was installed.
-sys.path.append("/usr/lib/archivematica/archivematicaCommon")
-import databaseInterface
-databaseInterface.printSQL = False
+from main import models
 
+import django
+django.setup()
 
 linkUUIDtoNodeName = {}
 
@@ -435,46 +434,21 @@ def load_chain_links(G):
     Map all the existing job chain links to nodes in the graph.
     Default links are represented with black arrows.
     """
-    sql = """
-        SELECT
-            MicroServiceChainLinks.pk,
-            MicroServiceChainLinks.defaultNextChainLink,
-            TasksConfigs.description,
-            TaskTypes.description,
-            TasksConfigs.taskTypePKReference,
-            MicroServiceChainLinks.microserviceGroup
-        FROM MicroServiceChainLinks
-        JOIN TasksConfigs ON currentTask = TasksConfigs.pk
-        JOIN TaskTypes ON taskType = TaskTypes.pk;
-    """
-    links = databaseInterface.queryAllSQL(sql)
-    for link in links:
-        pk, defaultNextChainLink, description, taskType, pkRef, group = link
+    fields = ('id', 'defaultnextchainlink', 'currenttask__description',
+              'currenttask__tasktype__description', 'currenttask__tasktypepkreference',
+              'microservicegroup')
+    links = models.MicroServiceChainLink.objects.all().values_list(*fields)
+    for pk, defaultNextChainLink, description, taskType, pkRef, group in links:
         if pk in excludedNodes:
             continue
-        sql = """
-            SELECT
-                execute,
-                arguments
-            FROM StandardTasksConfigs
-            WHERE pk=%s;
-        """
-        script_name = databaseInterface.queryAllSQL(sql, (pkRef,))
-        arguments = None
-        if script_name:
-            script_name, arguments = script_name[0]
-        elif not script_name:
-            sql = """
-                SELECT
-                    variable,
-                    variableValue,
-                    microServiceChainLink
-                FROM TasksConfigsSetUnitVariable
-                WHERE pk=%s;
-            """
-            returned = databaseInterface.queryAllSQL(sql, (pkRef,))
-            if returned:
-                script_name = '%s, %s' % (returned[0][0], returned[0][1] or returned[0][2])
+        script_name, arguments = None, None
+        qs = models.StandardTaskConfig.objects.filter(pk=pkRef).values_list('execute', 'arguments')
+        if qs.exists():
+            script_name, arguments = qs.get()
+        else:
+            qs = models.TaskConfigSetUnitVariable.objects.filter(pk=pkRef).values_list('variable', 'variablevalue', 'microservicechainlink_id')
+            if qs.exists():
+                script_name = '%s, %s' % (qs[0][0], qs[0][1] or qs[0][2])
         # Node info:
         # {MSCL UUID} Name of node
         # (task type description) taskTypePKReference
@@ -482,12 +456,8 @@ def load_chain_links(G):
         nodeName = r"{%s} %s\n(%s) %s\n[%s] %s" % (pk, description, taskType, pkRef, script_name or '', group)
         # Color if start of chain
         border_color = COLORS['node_chain_link']
-        sql = """
-            SELECT *
-            FROM MicroServiceChains
-            WHERE startingLink=%s;
-        """
-        if databaseInterface.queryAllSQL(sql, (pk,)):
+        qs = models.MicroServiceChain.objects.filter(startinglink_id=pk)
+        if qs.exists():
             border_color = COLORS['node_chain_link_start']
         full_script_name = get_script_name(script_name)
         tooltip = 'Script name: {}. \n'.format(full_script_name) if full_script_name else 'Full script name not found. '
@@ -508,17 +478,9 @@ def bridgeExitCodes(G):
     greater than zero and green otherwise. The exit code is included in the
     label of the edge.
     """
-    sql = """
-        SELECT
-            microServiceChainLink,
-            nextMicroServiceChainLink,
-            exitCode
-        FROM MicroServiceChainLinksExitCodes;
-    """
-    logger.info('Processing exit codes...')
-    rows = databaseInterface.queryAllSQL(sql)
-    for row in rows:
-        microServiceChainLink, nextMicroServiceChainLink, exit_code = row
+    fields = ('microservicechainlink_id', 'nextmicroservicechainlink_id', 'exitcode')
+    qs = models.MicroServiceChainLinkExitCode.objects.values_list(*fields)
+    for microServiceChainLink, nextMicroServiceChainLink, exit_code in qs:
         if nextMicroServiceChainLink:
             color = COLORS['edge_exit_codes_ok'] if not exit_code else COLORS['edge_exit_codes_err']
             add_edge(G, microServiceChainLink, nextMicroServiceChainLink, label='EXITCODE={}'.format(exit_code), color=color)
@@ -530,17 +492,12 @@ def bridgeUserSelections(G):
     arrows are green and labeled with the choice description.
     """
     logger.info('Processing user choices...')
-    sql = """
-        SELECT
-            MicroServiceChainChoice.choiceAvailableAtLink,
-            MicroServiceChains.startingLink,
-            MicroServiceChains.description
-        FROM MicroServiceChainChoice
-        JOIN MicroServiceChains ON (MicroServiceChainChoice.chainAvailable = MicroServiceChains.pk);
-    """
-    rows = databaseInterface.queryAllSQL(sql)
-    for row in rows:
-        choiceAvailableAtLink, startingLink, description = row
+
+    fields = ('choiceavailableatlink_id', 'chainavailable__startinglink_id',
+              'chainavailable__description')
+    qs = models.MicroServiceChainChoice.objects.values_list(*fields)
+
+    for choiceAvailableAtLink, startingLink, description in qs:
         if choiceAvailableAtLink and startingLink:
             add_edge(G, choiceAvailableAtLink, startingLink, color=COLORS['edge_user_selections'], label=description)
 
@@ -578,9 +535,10 @@ def bridgeWatchedDirectories(G):
         FROM WatchedDirectories
         JOIN MicroServiceChains ON (WatchedDirectories.chain = MicroServiceChains.pk);
     """
-    rows = databaseInterface.queryAllSQL(sql)
-    for row in rows:
-        watchedDirectoryPath, startingLink = row
+
+    qs = models.WatchedDirectory.objects.values_list('watched_directory_path', 'chain__startinglink_id')
+
+    for watchedDirectoryPath, startingLink in qs:
         logger.debug("\nWatched directory [%s] [startingLink=%s]",
             watchedDirectoryPath.replace('%watchDirectoryPath%', ''),
             startingLink)
@@ -599,15 +557,16 @@ def bridgeWatchedDirectories(G):
                 AND taskType = %s
                 AND (arguments LIKE %s OR arguments LIKE %s);
         """
-        rows2 = databaseInterface.queryAllSQL(sql, (
-            TASK_TYPES['one_instance'],
-            '%{}%'.format(watchedDirectoryPath.replace('%', '\%')),
-            '%{}%'.format(watchedDirectoryPath.replace('%watchDirectoryPath%', '%sharedPath%watchedDirectories/', 1).replace('%', '\%')),
-        ))
-        for row2 in rows2:
-            microServiceChainLink, execute, arguments = row2
+        tasks = models.TaskConfig.objects.filter(tasktype_id=TASK_TYPES['one_instance']).values_list('tasktypepkreference', flat=True)
+        arguments_query = Q(arguments__contains=watchedDirectoryPath) | Q(arguments__contains=watchedDirectoryPath.replace('%watchDirectoryPath%', '%sharedPath%watchedDirectories/', 1))
+        stcs = models.StandardTaskConfig.objects.filter(arguments_query,
+                                                        execute__startswith='move',
+                                                        id__in=tasks)
+        for stc in stcs:
+            microServiceChainLink = models.MicroServiceChainLink.objects.get(currenttask__tasktypepkreference=stc.id).id
+
             add_edge(G, microServiceChainLink, startingLink, color=COLORS['edge_watched_directories'], label=watchedDirectoryPath)
-            logger.debug('  MATCHED SOURCE:\n   -> %s \n   -> %s\n   -> %s', microServiceChainLink, execute, arguments)
+            logger.debug('  MATCHED SOURCE:\n   -> %s \n   -> %s\n   -> %s', microServiceChainLink, stc.execute, stc.arguments)
             count += 1
 
         if count == 0:
@@ -625,9 +584,11 @@ def bridgeMagicChainLinks(G):
         JOIN TasksConfigsAssignMagicLink ON (TasksConfigsAssignMagicLink.pk = TasksConfigs.taskTypePKReference)
         WHERE TasksConfigs.taskType = %s;
     """
-    rows = databaseInterface.queryAllSQL(sql, (TASK_TYPES['assign_magic_link'],))
-    for row in rows:
-        microServiceChainLink, magicLink = row
+
+    qs = models.MicroServiceChainLink.objects.filter(currenttask__tasktype_id=TASK_TYPES['assign_magic_link']).values_list('id', 'currenttask__tasktypepkreference')
+
+    for microServiceChainLink, magicLinkId in qs:
+        magicLink = models.TaskConfigAssignMagicLink.objects.get(id=magicLinkId).execute.id
         node = G.get_node(linkUUIDtoNodeName[microServiceChainLink])
         # Keep a list of visited nodes to avoid infinite recursion
         visitedNodes = {node: None}
@@ -639,20 +600,11 @@ def bridgeMagicChainLinks(G):
 def bridgeMagicChainLinksRecursiveAssist(G, node, magicLink, visitedNodes):
     ret = 0
     link = node[1:node.find('}')]
-    sql = """
-        SELECT MicroServiceChainLinks.pk
-        FROM MicroServiceChainLinks
-        JOIN TasksConfigs ON (MicroServiceChainLinks.currentTask = TasksConfigs.pk)
-        WHERE
-            TasksConfigs.taskType = %s
-            AND MicroServiceChainLinks.pk = %s;
-    """
-    rows = databaseInterface.queryAllSQL(sql, (
-        TASK_TYPES['assign_magic_link'],
-        link,
-    ))
+    qs = models.MicroServiceChainLink.objects.filter(currenttask__tasktype_id=TASK_TYPES['assign_magic_link'],
+                                                     id=link)
+
     # if it's loading it, set the load and return
-    if len(rows):
+    if qs.exists():
         add_edge(G, link, magicLink, color=COLORS['edge_magic_chain_links'])
         return 1
     else:
@@ -665,38 +617,16 @@ def bridgeMagicChainLinksRecursiveAssist(G, node, magicLink, visitedNodes):
 
 
 def bridgeLoadVariable(G):
-    sql = """
-        SELECT
-            MicroServiceChainLinks.pk,
-            TasksConfigsUnitVariableLinkPull.variable,
-            TasksConfigsUnitVariableLinkPull.defaultMicroServiceChainLink
-        FROM MicroServiceChainLinks
-        JOIN TasksConfigs ON (MicroServiceChainLinks.currentTask = TasksConfigs.pk)
-        JOIN TasksConfigsUnitVariableLinkPull ON (TasksConfigsUnitVariableLinkPull.pk = TasksConfigs.taskTypePKReference)
-        WHERE TasksConfigs.taskType = %s;
-    """
-    rows = databaseInterface.queryAllSQL(sql, (TASK_TYPES['unit_var_pull'],))
-    for row in rows:
+    links = models.MicroServiceChainLink.objects.filter(currenttask__tasktype=TASK_TYPES['unit_var_pull']).values_list('id', 'currenttask_id')
+    for microServiceChainLink, taskId in links:
+        variable_pull = models.TaskConfigUnitVariableLinkPull.objects.get(id=taskId)
+        variable = variable_pull.variable
+        defaultMicroServiceChainLink = variable_pull.defaultmicroservicechainlink_id
         count = 0
-        microServiceChainLink, variable, defaultMicroServiceChainLink = row
-        sql = """
-            SELECT
-                MicroServiceChainLinks.pk,
-                TasksConfigsSetUnitVariable.variable,
-                TasksConfigsSetUnitVariable.microServiceChainLink
-            FROM MicroServiceChainLinks
-            JOIN TasksConfigs ON MicroServiceChainLinks.currentTask = TasksConfigs.pk
-            JOIN TasksConfigsSetUnitVariable ON TasksConfigsSetUnitVariable.pk = TasksConfigs.taskTypePKReference
-            WHERE
-                TasksConfigs.taskType = %s
-                AND TasksConfigsSetUnitVariable.variable = %s;
-        """
-        rows2 = databaseInterface.queryAllSQL(sql, (
-            TASK_TYPES['unit_var'],
-            variable,
-        ))
-        for row2 in rows2:
-            microServiceChainLink2, variable, microServiceChainLinkDest = row2
+
+        tasks = models.TaskType.objects.filter(tasktype_id=TASK_TYPES['unit_var'], variable=variable).values_list('tasktypepkreference', flat=True)
+        variables = models.TaskConfigSetUnitVariable.objects.filter(id__in=tasks).values_list('variable', 'microservicechainlink_id')
+        for variable, microServiceChainLinkDest in variables:
             add_edge(G, microServiceChainLink, microServiceChainLinkDest, color=COLORS['edge_load_variable'], label=variable)
             count += 1
         if defaultMicroServiceChainLink:
