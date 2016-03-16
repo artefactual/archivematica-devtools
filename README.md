@@ -98,4 +98,4 @@ reindex-index-data will delete and re-index an ElasticSearch index, creating it 
 This is useful if the mapping has changed in an incompatible way but the existing data should be preserved.
 Depending on the size of the index, a large amount of memory may be consumed.
 
-There is one parameter which specifies which index to recreate: `transfers` or `aips`.
+There is one positional argument which specifies which index to recreate: `transfers` or `aips`. Additionally, the optional parameter `--chunk-size` allows the user to decide how many documents are sent to Elasticsearch in one chunk. This can help to circumvent timeout issues when the documents are very big.

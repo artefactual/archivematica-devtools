@@ -43,12 +43,13 @@ def index_iterator(records, index, doc_type, action='index'):
         }
 
 
-def reindex(index, doc_types):
+def reindex(index, doc_types, chunk_size):
     """
     Delete and recreate index/doc_types in Elasticsearch.
 
     :param str index: Index to recreate
     :param list doc_types: List of doc types to recreate
+    :param int chunk_size: Number of docs in one chunk sent to Elasticsearch
     """
     conn = Elasticsearch(hosts=elasticSearchFunctions.getElasticsearchServerHostAndPort())
 
@@ -71,7 +72,7 @@ def reindex(index, doc_types):
     for doc_type, records in doctype_records.items():
         print('Indexing', len(records), index + '/' + doc_type, 'records.')
         try:
-            elasticsearch.helpers.bulk(conn, index_iterator(records, index, doc_type))
+            elasticsearch.helpers.bulk(conn, index_iterator(records, index, doc_type), chunk_size)
         except ElasticsearchException as e:
             print('Indexing failed for index {}, type {}, for reason: {}'.format(index, doc_type, e), file=sys.stderr)
             continue
@@ -80,6 +81,7 @@ def reindex(index, doc_types):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Regenerate index based on the existing data to update the index types.')
     parser.add_argument('index', choices=['transfers', 'aips'], help='Index to re-generate.')
+    parser.add_argument('--chunk-size', type=int, default=50, help='Number of docs in one chunk sent to Elasticsearch.')
     args = parser.parse_args()
 
     index_doctypes = {
@@ -87,4 +89,4 @@ if __name__ == '__main__':
         'aips': ['aip', 'aipfile'],
     }
 
-    sys.exit(reindex(args.index, index_doctypes[args.index]))
+    sys.exit(reindex(args.index, index_doctypes[args.index], args.chunk_size))
