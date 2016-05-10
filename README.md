@@ -140,7 +140,9 @@ There are three required parameters: the old JSON, the new JSON & the output loc
 
 ### import-pronom-ids
 
-import-pronom-ids takes a FIDO PRONOM XML file, and populates the FPR with any new formats not yet present in the database.
+import-pronom-ids takes a FIDO PRONOM XML file, and populates the locally acessible FPR with any new formats not yet present in the database.
+The PRONOM XML file can be downloaded from [FIDO's github page](https://github.com/openpreserve/fido/tree/master/fido/conf/) by looking for formats-v##.xml
+For example, https://github.com/openpreserve/fido/tree/master/fido/conf/formats-v84.xml
 "New" formats are defined as formats whose PUID is not present in any FormatVersion, regardless of whether anything with a description of that name is present.
 
 If the FPR admin being used has debug enabled, then this will also output the SQL statements used to insert entries into the database to stdout.
