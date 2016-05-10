@@ -35,6 +35,9 @@ INSTALLATION
 A makefile is provided; `make install` will build the package and install to /usr/local.
 The prefix can be customized by passing the `PREFIX` make variable (for instance, `make install PREFIX=/opt/archivematica`), and the tool installation directory can be changed by passing the `libexecdir` make variable.
 
+To uninstall, run `make uninstall`.
+This will only uninstall tools currently available, and won't uninstall tools installed by a different version of devtools.
+
 TOOLS PROVIDED
 --------------
 
