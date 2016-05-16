@@ -115,11 +115,11 @@ def main(pronom_xml, output_format=SQL_OUTPUT, output_file=sys.stdout):
         # If an extension is listed, set up a new IDRule so that
         # the `Files by Extension` IDCommand can find them.
         if new_format.extension:
-            # First check to see if a rule already exists: if it
-            # does, don't create a duplicate, because these IDRules
-            # can only map an extension to a single format.
+            # First check to see if a rule already exists: if it does, delete it
+            # IDRules can only map an extension to a single format and we don't know which extension to map to.
             try:
-                IDRule.objects.get(command_output=new_format.extension)
+                rule = IDRule.objects.get(command_output=new_format.extension)
+                rule.delete()
             except IDRule.DoesNotExist:
                 rule = IDRule(
                     format=format_version,
