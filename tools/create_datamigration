@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+"""
+Turn a dumpdata json into a Django data migration.
+
+Parse a JSON file created by dumpdata and create a data migration using the Django ORM to bulk insert rows.
+
+Usage: create_datamigration.py input_file.json output_file
+"""
+import argparse
+import contextlib
+import json
+import re
+import sys
+
+@contextlib.contextmanager
+def smart_open(filename, *args, **kwargs):
+    if filename is sys.stdout:
+        fh = sys.stdout
+    else:
+        fh = open(filename, *args, **kwargs)
+    try:
+        yield fh
+    finally:
+        if fh is not sys.stdout:
+            fh.close()
+
+def sql_to_migration(input_file, filename):
+    with smart_open(filename, 'w') as f:
+        print('def data_migration(apps, schema_editor):', file=f)
+
+        with open(input_file, 'r') as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                if line.startswith('--') or line.startswith('#'):
+                    continue
+                print('line', line)
+                if line.startswith('INSERT'):
+                    regex = r'INSERT INTO (.+) \((.+)\) VALUES \((.+)\);'
+                    match = re.match(regex, line)
+                    print(match)
+                    if match:
+                        keys = [key.strip() for key in match.group(2).split(',')]
+                        values = [value.strip() for value in match.group(3).split(',')]
+                        params = zip(keys, values)
+                        params = ', '.join(key+'='+value for key, value in params)
+                        string = '{}.objects.create({})'.format(match.group(1), params)
+                        print(string)
+
+
+def dumpdata_to_migration(input_file, filename):
+    with open(input_file, 'r') as f:
+        j = json.load(f)
+
+    current_model = None
+    with smart_open(filename, 'w') as f:
+        print('def data_migration(apps, schema_editor):', file=f)
+        for elem in j:
+            if current_model != elem['model']:
+                if current_model is not None:
+                    print('    ])', file=f)
+                    print('', file=f)
+                current_model = elem['model']
+                app, model = current_model.split('.')
+                print('    %s = apps.get_model("%s", "%s")' % (model, app, model), file=f)
+                print('    %s.objects.bulk_create([' % model, file=f)
+            attr_str = ''
+            attr_str += 'id="%s", ' % elem['pk']
+            for k, v in elem['fields'].items():
+                if isinstance(v, str):
+                    if v and v[0] == "'":
+                        v = ' ' + v
+                    if v and v[-1] == "'":
+                        v += ' '
+                    temp = "%s=r'''%s''', " % (k, v)
+                else:
+                    temp = '%s=%s, ' % (k, v)
+                attr_str += temp
+            print('        %s(%s),' % (model, attr_str), file=f)
+        print('    ])', file=f)
+        print('', file=f)
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Convert something to a Django data migration.')
+    parser.add_argument('mode', choices=['json', 'sql'], help='Type of the input')
+    parser.add_argument('input', help='Input file')
+    parser.add_argument('--output', default=sys.stdout, help='Output file. If not specified, will print to stdout')
+
+    args = parser.parse_args()
+
+    if args.mode == 'json':
+        dumpdata_to_migration(args.input, args.output)
+    elif args.mode == 'sql':
+        sql_to_migration(args.input, args.output)
