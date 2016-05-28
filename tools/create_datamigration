@@ -6,8 +6,10 @@ Parse a JSON file created by dumpdata and create a data migration using the Djan
 
 Usage: create_datamigration.py input_file.json output_file
 """
+from __future__ import print_function, absolute_import
 import argparse
 import contextlib
+import csv
 import json
 import re
 import sys
@@ -24,12 +26,41 @@ def smart_open(filename, *args, **kwargs):
         if fh is not sys.stdout:
             fh.close()
 
+
+def csv_to_migration(input_file, filename):
+    with smart_open(filename, 'w') as f:
+        print('def data_migration(apps, schema_editor):', file=f)
+
+        # Assuming filename in format module_app-{new,updated}.csv
+        regex = r'(\w+)_(\w+)-(\w+)'
+        match = re.match(regex, input_file)
+        if match:
+            app = match.group(1)
+            model = match.group(2)
+            change = match.group(3)
+        else:
+            return
+        # TODO fix this to get actual model name
+        print('    %s = apps.get_model("%s", "%s")' % (model, app, model), file=f)
+
+        print('    %s.objects.bulk_create([' % model, file=f)
+        with open(input_file, 'r') as inputf:
+            csvreader = csv.reader(inputf)
+            header = next(csvreader)
+            for row in csvreader:
+                attrs = list(zip(header, row))
+                # TODO fix this to better handle non-string data types
+                attr_str = ', '.join('%s=%s' % (k.strip(),v.strip()) for k, v in attrs)
+                print('        %s(%s),' % (model, attr_str), file=f)
+        print('    ])', file=f)
+
+
 def sql_to_migration(input_file, filename):
     with smart_open(filename, 'w') as f:
         print('def data_migration(apps, schema_editor):', file=f)
 
-        with open(input_file, 'r') as f:
-            for line in f:
+        with open(input_file, 'r') as inputf:
+            for line in inputf:
                 if not line.strip():
                     continue
                 if line.startswith('--') or line.startswith('#'):
@@ -82,7 +113,7 @@ def dumpdata_to_migration(input_file, filename):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Convert something to a Django data migration.')
-    parser.add_argument('mode', choices=['json', 'sql'], help='Type of the input')
+    parser.add_argument('mode', choices=['json', 'sql', 'csv'], help='Type of the input')
     parser.add_argument('input', help='Input file')
     parser.add_argument('--output', default=sys.stdout, help='Output file. If not specified, will print to stdout')
 
@@ -92,3 +123,5 @@ if __name__ == '__main__':
         dumpdata_to_migration(args.input, args.output)
     elif args.mode == 'sql':
         sql_to_migration(args.input, args.output)
+    elif args.mode == 'csv':
+        csv_to_migration(args.input, args.output)
