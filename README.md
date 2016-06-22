@@ -6,7 +6,22 @@ These development tools are primarily used in debugging and developing Archivema
 In the past, these tools were contained in the primary Archivematica repository; they have been split out into a separate repository to make them easier to use with packaged Archivematica installations.
 While these are primarily intended for use in development, Archivematica systems administrators may find them useful in debugging Archivematica installations.
 
-USAGE
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
+
+- [Usage](#usage)
+- [Requirements](#requirements)
+  - [Build](#build)
+  - [Runtime](#runtime)
+- [Installation](#installation)
+- [Tools Provided](#tools-provided)
+  - [graph-links](#graph-links)
+  - [reindex-index-data](#reindex-index-data)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
+Usage
 -----
 
 A tool called `am` is provided as a launcher for the different tools in this package. To call a tool, run `am toolname`, e.g. `am linktool`.
@@ -14,7 +29,7 @@ All of the available tools can be listed by running `am ls-tools`.
 More detailed documentation is available in the `am` manpage.
 Manpages are available for certain tools provided in this package as well.
 
-REQUIREMENTS
+Requirements
 ------------
 
 ### Build
@@ -29,7 +44,7 @@ REQUIREMENTS
  * graphviz (`graphviz` `libgraphviz-dev` `python-pygraphviz` `pkg-config` in Ubuntu/Debian)
  * [`pygraphviz`](https://pypi.python.org/pypi/pygraphviz)
 
-INSTALLATION
+Installation
 ------------
 
 A makefile is provided; `make install` will build the package and install to /usr/local.
@@ -38,7 +53,7 @@ The prefix can be customized by passing the `PREFIX` make variable (for instance
 To uninstall, run `make uninstall`.
 This will only uninstall tools currently available, and won't uninstall tools installed by a different version of devtools.
 
-TOOLS PROVIDED
+Tools Provided
 --------------
 
 * linktool: Assists in generating SQL to create new microservice chainlinks, or to access information about links in the database.
