@@ -1,14 +1,14 @@
 ================================================================================
-  How to use `am add-fpr-rule` to create MediaConch tool, command and rule
+  ``am add-fpr-rule`` Example Usage
 ================================================================================
 
-This document provides an example of how one might use the `add-fpr-rule` tool
+This document provides an example of how one might use the ``add-fpr-rule`` tool
 in Archivematica's devtools to create a new FPR tool, command and rule. In this
 example, we are creating a tool, a command, and a rule that allow the use of
 MediaConch for the validation of Matroska (.mkv) video files.
 
 Note the following. In the code examples below, the output SQL is formatted for
-ease of reading. The actual output of `add-fpr-rule` does not contain this
+ease of reading. The actual output of ``add-fpr-rule`` does not contain this
 formatting. Also, empty input by the user during the CLI is represented by a
 blank line.
 
@@ -41,7 +41,7 @@ First, create the MediaConch tool::
 Create the Command
 ================================================================================
 
-Assuming the file `mediaconch.py` contains the desired command code and is in
+Assuming the file ``mediaconch.py`` contains the desired command code and is in
 the current directory::
 
     $ sudo am add-fpr-rule fpcommand mediaconch.py

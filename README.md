@@ -68,7 +68,7 @@ Tools Provided
 * reindex-backlogged-transfers: Seeds the Storage Service with information about all transfers in the transfer backlog.
 * stress-test-aip-indexing: Stress test Elasticsearch AIP indexing by repeatedly indexing test data.
 * sword-diagnose: Attempt to detect any issues in AtoM/SWORD configuration when setting up DIP upload to an AtoM instance.
-* add-fpr-tool: Generate the SQL needed to create FPR tools, rules, commands, etc.
+* add-fpr-tool: Generate the SQL needed to create FPR tools, rules, commands, etc. See the [add-fpr-tool MediaConch example doc](doc/add-fpr-rule-example.rst).
 
 ### graph-links
 
