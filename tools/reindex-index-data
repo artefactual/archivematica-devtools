@@ -51,7 +51,11 @@ def reindex(index, doc_types, chunk_size):
     :param list doc_types: List of doc types to recreate
     :param int chunk_size: Number of docs in one chunk sent to Elasticsearch
     """
-    conn = Elasticsearch(hosts=elasticSearchFunctions.getElasticsearchServerHostAndPort())
+    try:  # Shim to handle elasticSearchFunctions cleanup
+        conn = Elasticsearch(hosts=elasticSearchFunctions.getElasticsearchServerHostAndPort())
+    except AttributeError:
+        elasticSearchFunctions.setup_reading_from_client_conf()
+        conn = elasticSearchFunctions.get_client()
 
     try:
         conn.indices.get_mapping(index)
@@ -66,7 +70,10 @@ def reindex(index, doc_types, chunk_size):
 
     # Delete exisitng index and recreate mapping
     conn.indices.delete(index=index)
-    elasticSearchFunctions.connect_and_create_index(index)
+    try:  # Shim to handle elasticSearchFunctions cleanup
+        elasticSearchFunctions.connect_and_create_index(index)
+    except AttributeError:
+        elasticSearchFunctions.create_index(conn, index)
 
     # Reindex with the same data
     for doc_type, records in doctype_records.items():

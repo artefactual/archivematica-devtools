@@ -137,7 +137,7 @@ This should not be used if there are AIPs stored that are not locally accessible
 
 ### reindex-index-data
 
-*Versions*: Archivematica 1.5
+*Versions*: Archivematica 1.5, 1.6
 
 reindex-index-data will delete and re-index an ElasticSearch index, creating it with an updated mapping based on the currently installed Archivematica instance.
 This is useful if the mapping has changed in an incompatible way but the existing data should be preserved.
