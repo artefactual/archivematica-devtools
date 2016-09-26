@@ -1,0 +1,225 @@
+#!/usr/bin/env python2
+# -*- coding: utf-8 -*-
+"""This script rebuilds the Elasticsearch index for an existing AIP, given the
+AIP's UUID as sole argument.
+
+Usage::
+
+    $ sudo ./rebuild-elasticsearch-aip-index \
+        698aef1e-d57a-41ee-a64d-5933b4777886
+
+It replaces the following two scripts which no longer work with current
+versions of Archivematica (QUESTION: as of which version?) and which should be
+considered deprecated:
+
+- rebuild-elasticsearch-aip-index-from-files
+- rebuild-elasticsearch-aip-index-from-mets-files-only
+
+Specifications. This script should:
+
+- be executed on the VM where an Archivematica pipeline is running
+- take an AIP UUID as input
+- check if the inputted UUID is valid (i.e., it is the UUID of an existing AIP
+  in the aipstore of the storage service associated to the pipeline)
+- get from the Storage Service the AIP files required to index it to the 'aips'
+  elasticsearch index of the archivematica pipeline
+- Once it gets the required files from the Storage Service, it should execute
+  the archivematica MCP client script index-aip.py, in a similar way the
+  archivematica dashboard calls index-aip.py when indexing an AIP during an
+  ingest. The idea is to reuse, if possible, the index-aip.py script instead of
+  putting AIP indexing code in the new script, to avoid it becoming obsolete in
+  the future (if changes are made to the AIP indexing specs in archivematica)
+
+The script should be added to archivematica-devtools (it also may be a good
+idea to delete or add deprecation notes to the two old scripts mentioned above
+since they no longer work).
+
+There are a couple of preliminary test scripts in the ops-helpers repository
+branch dev/index-aip that may be useful (or not) as a starting point:
+
+- https://github.com/artefactual-labs/ops-helpers/\
+    blob/dev/index-aip/am-index-aip/index-aip.py
+- https://github.com/artefactual-labs/ops-helpers/\
+    blob/dev/index-aip/am-index-aip/index-aip-from-aipstore.py
+"""
+
+from __future__ import print_function
+import argparse
+import collections
+import ConfigParser
+import grp
+import os
+import pwd
+import shlex
+import subprocess
+import shutil
+import sys
+
+CLIENT_SCRIPTS_DIR = "/usr/lib/archivematica/MCPClient/clientScripts"
+DJANGO_SETTINGS_MODULE = "settings.common"
+PYTHONPATH = ("/usr/share/archivematica/dashboard:"
+              "/usr/lib/archivematica/archivematicaCommon")
+CLIENT_CONFIG_FILE_PATH = '/etc/archivematica/MCPClient/clientConfig.conf'
+
+for path in PYTHONPATH.split(':'):
+    sys.path.append(path)
+os.environ["DJANGO_SETTINGS_MODULE"] = DJANGO_SETTINGS_MODULE
+import django
+django.setup()
+from main.models import SIP
+from fileOperations import extract_aip
+
+
+AIP = collections.namedtuple('AIP', ['uuid', 'name', 'path', 'type'])
+
+
+def clean_up_on_exception(func):
+    """Decorator that removes the dir created in sharedDirectory/tmp/ if an
+    exception occurs.
+    """
+    def wrapper(self, *args, **kwargs):
+        try:
+            return func(self, *args, **kwargs)
+        except Exception:
+            self.clean_up()
+            raise
+    return wrapper
+
+
+class ElasticsearchAIPReindexer:
+
+    def __init__(self):
+        self.tmp_path = None
+
+    def clean_up(self):
+        if self.tmp_path and os.path.exists(self.tmp_path):
+            shutil.rmtree(self.tmp_path)
+
+    def parse_args(self):
+        parser = argparse.ArgumentParser()
+        parser.add_argument("aip_uuid")
+        return parser.parse_args()
+
+    def get_demote_fn(self):
+        """Demote the *nix user to archivematica.
+        See http://stackoverflow.com/questions/1770209/\
+            run-child-processes-as-different-user-from-a-\
+            long-running-process/6037494#6037494
+        """
+        user_uid = pwd.getpwnam("archivematica").pw_uid
+        user_gid = grp.getgrnam("archivematica").gr_gid
+
+        def result():
+            os.setgid(user_gid)
+            os.setuid(user_uid)
+        return result
+
+    def get_aip(self, aip_uuid):
+        """Check if the inputted UUID is valid (i.e., it is the UUID of an
+        existing AIP in the aipstore of the storage service associated to the
+        pipeline).  If the UUID is valid, return the 3-tuple ``(aip_name,
+        aip_path, aip_type)``.
+        """
+        msg = 'There is no AIP with UUID {0}'.format(aip_uuid)
+        try:
+            aip = SIP.objects.get(uuid=aip_uuid)
+        except SIP.DoesNotExist:
+            print(msg)
+            sys.exit(0)
+        aip_name = aip.aip_filename
+        aip_path = self.get_aip_path(aip_uuid, aip_name)
+        # This will cause the indexAIP client script to delete any
+        # Elasticsearch indices corresponding to this AIP, if there are any.
+        aip_type = 'REIN'
+        if not aip_name:
+            print(msg)
+            sys.exit(0)
+        return (aip_name, aip_path, aip_type)
+
+    def get_aip_path(self, aip_uuid, aip_name):
+        """Return the full path to the AIP's data/ dir (containing the METS file).
+        Extract the compressed AIP to sharedDirectory/tmp/, if necessary.
+        """
+        # Get the path to the (archived) AIP in sharedDirectory/www/AIPsStore/
+        uuid = aip_uuid.replace('-', '')
+        aip_store_dir = os.path.join(
+            self.get_shared_directory(), 'www', 'AIPsStore')
+        aip_path = os.path.join(
+            aip_store_dir,
+            *(uuid[0 + i:4 + i] for i in range(0, len(uuid), 4)))
+        if not os.path.isdir(aip_path):
+            print('The AIP path {0} does not exist.'.format(aip_path))
+            sys.exit(0)
+        # Extract the compressed AIP to sharedDirectory/tmp/.
+        tmp_dir = self.get_tmp_directory()
+        aip_full_path = os.path.join(aip_path, aip_name)
+        # TODO: create an uncompressed AIP and re-index it to see if the
+        # following works.
+        if os.path.isdir(aip_full_path):
+            return aip_full_path
+        else:
+            try:
+                extract_dir = os.path.join(tmp_dir, aip_uuid)
+                self.tmp_path = extract_dir
+                if os.path.exists(extract_dir):
+                    shutil.rmtree(extract_dir)
+                return os.path.join(
+                    extract_aip(aip_full_path, extract_dir), 'data')
+            except Exception as e:
+                print(e)
+                print('Error extracting AIP at "{0}"'.format(aip_full_path),
+                      file=sys.stderr)
+                sys.exit(1)
+
+    def get_config_val(self, config_param):
+        """Return the value of ``config_param`` in the clientConfig.conf config
+        file.
+        """
+        config = ConfigParser.SafeConfigParser()
+        config.read(CLIENT_CONFIG_FILE_PATH)
+        try:
+            val = config.get('MCPClient', config_param)
+        except:
+            print("Configuration item '{0}' not available at"
+                  " {1}.".format(config_param, CLIENT_CONFIG_FILE_PATH))
+            sys.exit(1)
+        return val
+
+    def get_tmp_directory(self):
+        return self.get_config_val('temp_dir')
+
+    def get_shared_directory(self):
+        return self.get_config_val('sharedDirectoryMounted')
+
+    @clean_up_on_exception
+    def index(self):
+        """Use the indexAIP.py client script to index the AIP ``aip``."""
+        args = self.parse_args()
+        aip = AIP(args.aip_uuid, *self.get_aip(args.aip_uuid))
+        command_string = "./indexAIP.py {} {} {} {}".format(
+            aip.uuid, aip.name, aip.path, aip.type)
+        p = subprocess.Popen(
+            shlex.split(command_string),
+            preexec_fn=self.get_demote_fn(),
+            cwd=CLIENT_SCRIPTS_DIR,
+            env={"DJANGO_SETTINGS_MODULE": DJANGO_SETTINGS_MODULE,
+                 "PYTHONPATH": PYTHONPATH},
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        output = p.communicate()
+        if p.returncode == 0:
+            print('Successfully indexed AIP {0}'.format(aip.uuid))
+            print('\n'.join(output))
+        else:
+            print('Failed to index AIP {0}'.format(aip.uuid))
+            print('\n'.join(output))
+        self.clean_up()
+
+
+def main():
+    ElasticsearchAIPReindexer().index()
+
+
+if __name__ == '__main__':
+    sys.exit(main())
