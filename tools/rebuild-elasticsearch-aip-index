@@ -30,17 +30,10 @@ Specifications. This script should:
   putting AIP indexing code in the new script, to avoid it becoming obsolete in
   the future (if changes are made to the AIP indexing specs in archivematica)
 
-The script should be added to archivematica-devtools (it also may be a good
-idea to delete or add deprecation notes to the two old scripts mentioned above
-since they no longer work).
+TODOs:
 
-There are a couple of preliminary test scripts in the ops-helpers repository
-branch dev/index-aip that may be useful (or not) as a starting point:
-
-- https://github.com/artefactual-labs/ops-helpers/\
-    blob/dev/index-aip/am-index-aip/index-aip.py
-- https://github.com/artefactual-labs/ops-helpers/\
-    blob/dev/index-aip/am-index-aip/index-aip-from-aipstore.py
+- Delete or add deprecation notes to the two old scripts mentioned above (since
+  they no longer work).
 """
 
 from __future__ import print_function
@@ -67,7 +60,7 @@ os.environ["DJANGO_SETTINGS_MODULE"] = DJANGO_SETTINGS_MODULE
 import django
 django.setup()
 from main.models import SIP
-from fileOperations import extract_aip
+from executeOrRunSubProcess import executeOrRun
 
 
 AIP = collections.namedtuple('AIP', ['uuid', 'name', 'path', 'type'])
@@ -84,6 +77,27 @@ def clean_up_on_exception(func):
             self.clean_up()
             raise
     return wrapper
+
+
+# TODO: this function should be put in archivematicaCommon (maybe in
+# fileOperations.py?) because it is copied verbatim from the AM verifyAIP.py
+# client script. It is copied here for now so that it can be tested without
+# modifying Archivematica. Once done, the above
+# ``from executeOrRunSubProcess import executeOrRun``
+# can be removed and
+# ``from fileOperations import extract_aip
+# can be inserted.
+def extract_aip(aip_path, extract_path):
+    os.makedirs(extract_path)
+    command = "atool --extract-to={} -V0 {}".format(extract_path, aip_path)
+    print('Running extraction command: ', command)
+    exit_code, _, _ = executeOrRun("command", command, printing=True)
+    if exit_code != 0:
+        raise Exception("Error extracting AIP")
+    aip_identifier, ext = os.path.splitext(os.path.basename(aip_path))
+    if ext in ('.bz2', '.gz'):
+        aip_identifier, _ = os.path.splitext(aip_identifier)
+    return os.path.join(extract_path, aip_identifier)
 
 
 class ElasticsearchAIPReindexer:
