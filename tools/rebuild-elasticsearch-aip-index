@@ -167,10 +167,8 @@ class ElasticsearchAIPReindexer:
         # Extract the compressed AIP to sharedDirectory/tmp/.
         tmp_dir = self.get_tmp_directory()
         aip_full_path = os.path.join(aip_path, aip_name)
-        # TODO: create an uncompressed AIP and re-index it to see if the
-        # following works.
         if os.path.isdir(aip_full_path):
-            return aip_full_path
+            return os.path.join(aip_full_path, 'data')
         else:
             try:
                 extract_dir = os.path.join(tmp_dir, aip_uuid)
