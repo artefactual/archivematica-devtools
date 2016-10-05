@@ -361,6 +361,31 @@ def show_previous(link_uuid):
     previous_uuids = get_previous_links(link_uuid)
     print "Previous link UUIDs: {0}".format(', '.join(previous_uuids))
 
+def remove_from_chains(link_uuid):
+    if not link_exists(link_uuid):
+        print 'ERROR: link UUID ' + link_uuid + ' does not exist.'
+        return
+
+    sql_commands = ''
+
+    links_before_target_link = get_previous_links(link_uuid)
+    link_after_target_link = get_next_link(link_uuid)
+
+    if link_after_target_link == None:
+        link_after_target_link = 'NULL'
+
+    chain_uuid, _ = get_chain_info(link_uuid)
+    if chain_uuid:
+        #must be the first link in a chain
+        sql = """UPDATE MicroServiceChains SET startingLink='%s' WHERE pk='%s';""" % (link_after_target_link, chain_uuid) 
+        sql_commands += sql + "\n"
+
+    for link in links_before_target_link:
+        sql = """UPDATE MicroServiceChainLinksExitCodes SET nextMicroServiceChainLink='%s' WHERE microServiceChainLink='%s';""" % (link_after_target_link, link)
+        sql_commands += sql + "\n"
+
+    print sql_commands
+
 #
 # CLI interface
 #
@@ -426,6 +451,11 @@ if __name__ == '__main__':
             'function':    show_previous,
             'usage':       'previous <link UUID>',
             'description': 'show the UUID of the previous link in the chain'
+        },
+        'removefromchains': {
+            'function':    remove_from_chains,
+            'usage':       'removefromchains <linkUUID>',
+            'description': 'removes the link from chains'
         }
     }
 
