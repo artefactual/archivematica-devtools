@@ -170,30 +170,74 @@ def print_nested_lists(nested_list, indent, show_all_groups):
         else:
             print indent+"Something went wrong"
 
-def generate_standard_task_config_sql_from_user_input(standard_task_uuid):
+def generate_standard_task_config_sql_from_user_input(standard_task_uuid, options):
     print 'Creating new standard task config entry SQL...'
-    print 'Command? '
-    command = raw_input()
-    print 'Arguments? '
-    arguments = raw_input()
+    command = options.command
+    if command == None:
+        print 'Command? '
+        command = raw_input()
+
+    arguments = options.args
+    if arguments == None:
+        print 'Arguments? '
+        arguments = raw_input()
 
     return """INSERT INTO StandardTasksConfigs (pk, requiresOutputLock, execute, arguments) VALUES ('%s', 0, '%s', '%s');""" % (standard_task_uuid, command, arguments)
 
-def generate_task_config_sql_from_user_input(task_uuid, standard_task_uuid):
+def generate_task_config_sql_from_user_input(task_uuid, standard_task_uuid, options):
     print 'Creating new task entry SQL...'
-    print 'Task type UUID (from TaskTypes table)? '
-    task_type_uuid = raw_input()
-    print 'Description? '
-    description = raw_input()
+    task_type_uuid = options.task_type
+    if task_type_uuid == None:
+        print 'Task type UUID (from TaskTypes table)? '
+        task_type_uuid = raw_input()
+
+    description = options.description
+    if description == None:
+        print 'Description? '
+        description = raw_input()
 
     return """INSERT INTO TasksConfigs (pk, taskType, taskTypePKReference, description) VALUES ('%s', '%s', '%s', '%s');""" % (task_uuid, task_type_uuid, standard_task_uuid, description)
 
-def generate_exit_code_sql_from_user_input(exit_code_uuid, link_uuid, next_link_uuid=None):
+def generate_exit_code_sql_from_user_input(link_uuid, next_link_uuid=None):
+    exit_code_uuid = uuid.uuid4().__str__()
 
     if next_link_uuid == None:
         sql =  """INSERT INTO MicroServiceChainLinksExitCodes (pk, microServiceChainLink, exitCode, nextMicroServiceChainLink, exitMessage) VALUES ('%s', '%s', 0, NULL, 'Completed successfully');""" % (exit_code_uuid, link_uuid)
     else:
         sql = """INSERT INTO MicroServiceChainLinksExitCodes (pk, microServiceChainLink, exitCode, nextMicroServiceChainLink, exitMessage) VALUES ('%s', '%s', 0, '%s', 'Completed successfully');""" % (exit_code_uuid, link_uuid, next_link_uuid)
+    return sql
+    
+def generate_microservice_chain_link_sql_from_user_input(options, link_uuid, new_link_uuid, task_uuid):
+    print 'Creating new link SQL...'
+    microservice_group = options.microservice
+    if microservice_group == None:
+        print 'Microservice group?'
+        microservice_group = raw_input()
+
+    default_next_link = options.default_next
+    if default_next_link == None:
+        default_next_link = get_link_default_next_link_and_prompt_if_nonexistant(link_uuid)
+
+    sql = """INSERT INTO MicroServiceChainLinks(pk, microserviceGroup, defaultExitMessage, currentTask, defaultNextChainLink) values ('%s', '%s', 'Failed', '%s', '%s');""" % (new_link_uuid, microservice_group, task_uuid, default_next_link)
+
+    return sql
+
+def generate_chain_sql(link_uuid, new_link_uuid):
+    chain_uuid, _ = get_chain_info(link_uuid)
+    sql = ''
+
+    if chain_uuid:
+        # must update chain row to insert new link
+        sql = """UPDATE MicroServiceChains SET startingLink='%s' WHERE pk='%s';""" % (new_link_uuid, chain_uuid)
+
+    return sql
+
+def generate_exit_code_update_sql(previous_link_uuids, new_link_uuid):
+    sql = ''
+    for link in previous_link_uuids:
+        # there is a link before our target link that we need to alter to point to our next link
+        sql = """UPDATE MicroServiceChainLinksExitCodes SET nextMicroServiceChainLink='%s' WHERE microServiceChainLink='%s';""" % (new_link_uuid, link)
+
     return sql
 
 #
@@ -280,7 +324,7 @@ def show_link_info(link_uuid, show_all_groups=False):
     for link in next_links:
         print link_for_display(link, indent)
 
-def insert_link_before_link(link_uuid):
+def insert_link_before_link(link_uuid, options):
     if not link_exists(link_uuid):
         print 'ERROR: link UUID ' + link_uuid + ' does not exist.'
         return
@@ -288,40 +332,26 @@ def insert_link_before_link(link_uuid):
     sql_commands = ''
 
     standard_task_uuid = uuid.uuid4().__str__()
-    sql_commands = sql_commands + generate_standard_task_config_sql_from_user_input(standard_task_uuid) + "\n"
+    sql_commands = sql_commands + generate_standard_task_config_sql_from_user_input(standard_task_uuid, options) + "\n"
 
     task_uuid = uuid.uuid4().__str__()
-    sql_commands = sql_commands + generate_task_config_sql_from_user_input(task_uuid, standard_task_uuid) + "\n"
+    sql_commands = sql_commands + generate_task_config_sql_from_user_input(task_uuid, standard_task_uuid, options) + "\n"
 
     new_link_uuid = uuid.uuid4().__str__()
     links_before_target_link = get_previous_links(link_uuid)
 
-    print 'Creating new link SQL...'
-    print 'Microservice group? '
-    microservice_group = raw_input()
-
-    # add new link that will proceed to target link after normal execution
-    default_next_link = get_link_default_next_link_and_prompt_if_nonexistant(link_uuid)
-    sql = """INSERT INTO MicroServiceChainLinks(pk, microserviceGroup, defaultExitMessage, currentTask, defaultNextChainLink) values ('%s', '%s', 'Failed', '%s', '%s');""" % (new_link_uuid, microservice_group, task_uuid, default_next_link)
-    sql_commands = sql_commands + sql + "\n"
+    sql_commands = sql_commands + generate_microservice_chain_link_sql_from_user_input(options, link_uuid, new_link_uuid, task_uuid)  + "\n"
 
     # add new exit code that will proceed to target link after normal execution
-    exit_code_uuid = uuid.uuid4().__str__()
-    sql_commands = sql_commands + generate_exit_code_sql_from_user_input(exit_code_uuid, new_link_uuid, link_uuid) + "\n"
+    sql_commands = sql_commands + generate_exit_code_sql_from_user_input(new_link_uuid, link_uuid) + "\n"
 
-    for link in links_before_target_link:
-        # there is a link before our target link that we need to alter to point to our next link
-        sql = """UPDATE MicroServiceChainLinksExitCodes SET nextMicroServiceChainLink='%s' WHERE microServiceChainLink='%s';""" % (new_link_uuid, link)
-        sql_commands += sql + "\n"
-    chain_uuid, _ = get_chain_info(link_uuid)
-    if chain_uuid:
-        # must update chain row to insert new link
-        sql = """UPDATE MicroServiceChains SET startingLink='%s' WHERE pk='%s';""" % (new_link_uuid, chain_uuid)
-        sql_commands += sql + "\n"
+    sql_commands = sql_commands + generate_exit_code_update_sql(links_before_target_link, new_link_uuid) + "\n"
+
+    sql_commands = sql_commands + generate_chain_sql(link_uuid, new_link_uuid) + "\n"
 
     print sql_commands
 
-def insert_link_after_link(link_uuid):
+def insert_link_after_link(link_uuid, options):
     if not link_exists(link_uuid):
         print 'ERROR: link UUID ' + link_uuid + ' does not exist.'
         return
@@ -329,27 +359,17 @@ def insert_link_after_link(link_uuid):
     sql_commands = ''
 
     standard_task_uuid = uuid.uuid4().__str__()
-    sql_commands = sql_commands + generate_standard_task_config_sql_from_user_input(standard_task_uuid) + "\n"
+    sql_commands = sql_commands + generate_standard_task_config_sql_from_user_input(standard_task_uuid, options) + "\n"
 
     task_uuid = uuid.uuid4().__str__()
-    sql_commands = sql_commands + generate_task_config_sql_from_user_input(task_uuid, standard_task_uuid) + "\n"
+    sql_commands = sql_commands + generate_task_config_sql_from_user_input(task_uuid, standard_task_uuid, options) + "\n"
 
     new_link_uuid = uuid.uuid4().__str__()
     link_after_target_link = get_next_link(link_uuid)
 
-    print 'Creating new link SQL...'
-    print 'Microservice group? '
-    microservice_group = raw_input()
+    sql_commands = sql_commands + generate_microservice_chain_link_sql_from_user_input(options, link_uuid, new_link_uuid, task_uuid)  + "\n"
 
-    default_next_link = get_link_default_next_link_and_prompt_if_nonexistant(link_uuid)
-    if link_after_target_link == None:
-        sql = """INSERT INTO MicroServiceChainLinks(pk, microserviceGroup, defaultExitMessage, currentTask, defaultNextChainLink) values ('%s', '%s', 'Failed', '%s', '%s');""" % (new_link_uuid, microservice_group, task_uuid, default_next_link)
-    else:
-        sql = """INSERT INTO MicroServiceChainLinks(pk, microserviceGroup, defaultExitMessage, currentTask, defaultNextChainLink) values ('%s', '%s', 'Failed', '%s', '%s');""" % (new_link_uuid, microservice_group, task_uuid, default_next_link)
-    sql_commands = sql_commands + sql + "\n"
-
-    exit_code_uuid = uuid.uuid4().__str__()
-    sql_commands = sql_commands + generate_exit_code_sql_from_user_input(exit_code_uuid, new_link_uuid, link_after_target_link) + "\n"
+    sql_commands = sql_commands + generate_exit_code_sql_from_user_input(new_link_uuid, link_after_target_link) + "\n"
 
     sql = """UPDATE MicroServiceChainLinksExitCodes SET nextMicroServiceChainLink='%s' WHERE microServiceChainLink='%s';""" % (new_link_uuid, link_uuid)
     sql_commands = sql_commands + sql + "\n"
@@ -371,22 +391,19 @@ def remove_from_chains(link_uuid):
 
     sql_commands = ''
 
+    links_before_target_link = get_previous_links(link_uuid)
+    link_after_target_link = get_next_link(link_uuid)
+
     if link_after_target_link == None:
         link_after_target_link = 'NULL'
 
-    chain_uuid, _ = get_chain_info(link_uuid)
-    if chain_uuid:
-        #must be the first link in a chain
-        sql = """UPDATE MicroServiceChains SET startingLink='%s' WHERE pk='%s';""" % (link_after_target_link, chain_uuid)
-        sql_commands += sql + "\n"
+    sql_commands = sql_commands + generate_chain_sql(link_uuid, link_after_target_link) + "\n"
 
-    for link in links_before_target_link:
-        sql = """UPDATE MicroServiceChainLinksExitCodes SET nextMicroServiceChainLink='%s' WHERE microServiceChainLink='%s';""" % (link_after_target_link, link)
-        sql_commands += sql + "\n"
+    sql_commands = sql_commands + generate_exit_code_update_sql(links_before_target_link, link_after_target_link) + "\n"
 
     print sql_commands
 
-def replace_link_with_new_link(link_uuid, opts={}):
+def replace_link_with_new_link(link_uuid, options):
     if not link_exists(link_uuid):
         print 'ERROR: link UUID ' + link_uuid + ' does not exist.'
         return
@@ -394,43 +411,28 @@ def replace_link_with_new_link(link_uuid, opts={}):
     sql_commands = ''
 
     standard_task_uuid = uuid.uuid4().__str__()
-    sql_commands = sql_commands + generate_standard_task_config_sql_from_user_input(standard_task_uuid) + "\n"
+    sql_commands = sql_commands + generate_standard_task_config_sql_from_user_input(standard_task_uuid, options) + "\n"
 
     task_uuid = uuid.uuid4().__str__()
-    sql_commands = sql_commands + generate_task_config_sql_from_user_input(task_uuid, standard_task_uuid) + "\n"
+    sql_commands = sql_commands + generate_task_config_sql_from_user_input(task_uuid, standard_task_uuid, options) + "\n"
 
     new_link_uuid = uuid.uuid4().__str__()
 
     links_before_target_link = get_previous_links(link_uuid)
     link_after_target_link = get_next_link(link_uuid)
 
-    print 'Creating new link SQL...'
-    print 'Microservice group?'
-    microservice_group = raw_input()
+    sql_commands = sql_commands + generate_microservice_chain_link_sql_from_user_input(options, link_uuid, new_link_uuid, task_uuid)  + "\n"
 
-    default_next_link = get_link_default_next_link_and_prompt_if_nonexistant(link_uuid)
-    sql = """INSERT INTO MicroServiceChainLinks(pk, microserviceGroup, defaultExitMessage, currentTask, defaultNextChainLink) values ('%s', '%s', 'Failed', '%s', '%s');""" % (new_link_uuid, microservice_group, task_uuid, default_next_link)
+    sql_commands = sql_commands + generate_exit_code_sql_from_user_input(new_link_uuid, link_after_target_link) + "\n"
 
-    sql_commands = sql_commands + sql + "\n"
+    sql_commands = sql_commands + generate_exit_code_update_sql(links_before_target_link, new_link_uuid) + "\n"
 
-    exit_code_uuid = uuid.uuid4().__str__()
-
-    sql_commands = sql_commands + generate_exit_code_sql_from_user_input(exit_code_uuid, new_link_uuid, link_after_target_link) + "\n"
-
-    for link in links_before_target_link:
-        sql = """UPDATE MicroServiceChainLinksExitCodes SET nextMicroServiceChainLink='%s' WHERE microServiceChainLink='%s';""" % (new_link_uuid, link)
-        sql_commands += sql + "\n"
-
-    chain_uuid, _ = get_chain_info(link_uuid)
-    if chain_uuid:
-        # must update chain row to insert new link
-        sql = """UPDATE MicroServiceChains SET startingLink='%s' WHERE pk='%s';""" % (new_link_uuid, chain_uuid)
-        sql_commands += sql + "\n"
+    sql_commands = sql_commands + generate_chain_sql(link_uuid, new_link_uuid) + "\n"
 
     # update target link to go to new link
     print sql_commands
 
-def replace_link_with_existing_task(link_uuid_to_replace, replacement_task_uuid):
+def replace_link_with_existing_task(link_uuid_to_replace, replacement_task_uuid, options):
     if not link_exists(link_uuid_to_replace):
         print 'ERROR: link UUID ' + link_uuid_to_replace + ' does not exist.'
         return
@@ -446,34 +448,16 @@ def replace_link_with_existing_task(link_uuid_to_replace, replacement_task_uuid)
     links_before_target_link = get_previous_links(link_uuid_to_replace)
     link_after_target_link = get_next_link(link_uuid_to_replace)
 
-    print 'Creating new link SQL...'
-    print 'Microservice group?'
-    microservice_group = raw_input()
+    sql_commands = sql_commands + generate_microservice_chain_link_sql_from_user_input(options, link_uuid_to_replace, new_link_uuid, replacement_task_uuid)  + "\n"
 
-    default_next_link = get_link_default_next_link_and_prompt_if_nonexistant(link_uuid_to_replace)
-    sql = """INSERT INTO MicroServiceChainLinks(pk, microserviceGroup, defaultExitMessage, currentTask, defaultNextChainLink) values ('%s', '%s', 'Failed', '%s', '%s');""" % (new_link_uuid, microservice_group, replacement_task_uuid, default_next_link)
+    sql_commands = sql_commands + generate_exit_code_sql_from_user_input(new_link_uuid, link_after_target_link) + "\n"
 
-    sql_commands = sql_commands + sql + "\n"
+    sql_commands = sql_commands + generate_exit_code_update_sql(links_before_target_link, new_link_uuid) + "\n"
 
-    exit_code_uuid = uuid.uuid4().__str__()
-
-    sql_commands = sql_commands + generate_exit_code_sql_from_user_input(exit_code_uuid, new_link_uuid, link_after_target_link) + "\n"
-
-
-    for link in links_before_target_link:
-        sql = """UPDATE MicroServiceChainLinksExitCodes SET nextMicroServiceChainLink='%s' WHERE microServiceChainLink='%s';""" % (new_link_uuid, link)
-        sql_commands += sql + "\n"
-
-    chain_uuid, _ = get_chain_info(link_uuid_to_replace)
-    if chain_uuid:
-        # must update chain row to insert new link
-        sql = """UPDATE MicroServiceChains SET startingLink='%s' WHERE pk='%s';""" % (new_link_uuid, chain_uuid)
-        sql_commands += sql + "\n"
+    sql_commands = sql_commands + generate_chain_sql(link_uuid_to_replace, new_link_uuid) + "\n"
 
     # update target link to go to new link
     print sql_commands
-
-
 
 #
 # CLI interface
@@ -490,6 +474,12 @@ if __name__ == '__main__':
     usage = "usage: %prog [options] <command>"
 
     parser = OptionParser(usage=usage)
+    parser.add_option("-m", "--microservice", action="store", dest="microservice", type="string", help="name of the microservice group")
+    parser.add_option("-n", "--next", action="store", dest="default_next", type="string", help="UUID of the default next chainlink")
+    parser.add_option("-c", "--command", action="store", dest="command", type="string", help="the command that should be executed")
+    parser.add_option("-a", "--args", action="store", dest="args", type="string", help="the arguments that should be passed to the command")
+    parser.add_option("-d", "--description", action="store", dest="description", type="string", help="description of the task")
+    parser.add_option("-t", "--tasktype", action="store", dest="task_type", type="string", help="uuid of the task type")
 
     (options, args) = parser.parse_args()
 
@@ -504,63 +494,77 @@ if __name__ == '__main__':
         'linkfromtask': {
             'function':    show_link_uuid_using_task_uuid,
             'usage':       'linkfromtask <task UUID>',
-            'description': "use task UUID to look up corresponding link's UUID"
+            'description': "use task UUID to look up corresponding link's UUID",
+            'has_options': False
         },
         'linkfromjob': {
             'function':    show_link_uuid_using_job_uuid,
             'usage':       'linkfromjob <job UUID>',
-            'description': "use job UUID to look up corresponding link's UUID"
+            'description': "use job UUID to look up corresponding link's UUID",
+            'has_options': False
         },
         'info': {
             'function':    show_link_info,
             'usage':       'info <link UUID>',
-            'description': 'show other links in the same microservice group'
+            'description': 'show other links in the same microservice group',
+            'has_options': False
         },
         'chaininfo': {
             'function':    show_link_chain_info,
             'usage':       'chaininfo <link UUID>',
-            'description': 'show other links in the same chain'
+            'description': 'show other links in the same chain',
+            'has_options': False
         },
         'insertbefore': {
             'function':    insert_link_before_link,
             'usage':       'insertbefore <link UUID>',
-            'description': 'insert a new link before an existing link'
+            'description': 'insert a new link before an existing link',
+            'has_options': True
         },
         'insertafter': {
             'function':    insert_link_after_link,
             'usage':       'insertafter <link UUID>',
-            'description': 'insert a new link after an existing link'
+            'description': 'insert a new link after an existing link',
+            'has_options': True
         },
         'next': {
             'function':    show_next,
             'usage':       'next <link UUID>',
-            'description': 'show the UUID of the next link in the chain'
+            'description': 'show the UUID of the next link in the chain',
+            'has_options': False
         },
         'previous': {
             'function':    show_previous,
             'usage':       'previous <link UUID>',
-            'description': 'show the UUID of the previous link in the chain'
+            'description': 'show the UUID of the previous link in the chain',
+            'has_options': False
         },
         'removefromchains': {
             'function':    remove_from_chains,
             'usage':       'removefromchains <linkUUID>',
-            'description': 'removes the link from chains'
+            'description': 'removes the link from chains',
+            'has_options': False
         },
         'replacewithnew': {
             'function':    replace_link_with_new_link,
             'usage':       'replacewithnew <link UUID>',
-            'description': 'create a new link and replace an existing link'
+            'description': 'create a new link and replace an existing link',
+            'has_options': True
         },
         'replacewithexisting': {
             'function':    replace_link_with_existing_task,
             'usage':       'replacewithexisting <link UUID to replace> <replacement task UUID>',
-            'description': 'replace an existing link with an existing task (creates new link)'
+            'description': 'replace an existing link with an existing task (creates new link)',
+            'has_options': True
         }
     }
 
     # execute command or show usage
     if command in commands:
         command_function = commands[command]['function']
-        command_function(*args)
+        if commands[command]['has_options']:
+            command_function(*args, options=options)
+        else:
+            command_function(*args)
     else:
         help(parser, commands)
