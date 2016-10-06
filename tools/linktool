@@ -112,6 +112,9 @@ def link_exists(link_uuid):
     sql = """SELECT pk FROM MicroServiceChainLinks WHERE pk='%s'""" % (link_uuid)
     return simple_value_query(sql) != None
 
+def task_exists(task_uuid):
+    return get_task_property(task_uuid, 'pk') != None 
+
 def link_for_display(link_uuid, indent=''):
     return indent + link_uuid + ' (' + get_link_task_description(link_uuid) + ')'
 
@@ -368,16 +371,13 @@ def remove_from_chains(link_uuid):
 
     sql_commands = ''
 
-    links_before_target_link = get_previous_links(link_uuid)
-    link_after_target_link = get_next_link(link_uuid)
-
     if link_after_target_link == None:
         link_after_target_link = 'NULL'
 
     chain_uuid, _ = get_chain_info(link_uuid)
     if chain_uuid:
         #must be the first link in a chain
-        sql = """UPDATE MicroServiceChains SET startingLink='%s' WHERE pk='%s';""" % (link_after_target_link, chain_uuid) 
+        sql = """UPDATE MicroServiceChains SET startingLink='%s' WHERE pk='%s';""" % (link_after_target_link, chain_uuid)
         sql_commands += sql + "\n"
 
     for link in links_before_target_link:
@@ -385,6 +385,95 @@ def remove_from_chains(link_uuid):
         sql_commands += sql + "\n"
 
     print sql_commands
+
+def replace_link_with_new_link(link_uuid, opts={}):
+    if not link_exists(link_uuid):
+        print 'ERROR: link UUID ' + link_uuid + ' does not exist.'
+        return
+
+    sql_commands = ''
+
+    standard_task_uuid = uuid.uuid4().__str__()
+    sql_commands = sql_commands + generate_standard_task_config_sql_from_user_input(standard_task_uuid) + "\n"
+
+    task_uuid = uuid.uuid4().__str__()
+    sql_commands = sql_commands + generate_task_config_sql_from_user_input(task_uuid, standard_task_uuid) + "\n"
+
+    new_link_uuid = uuid.uuid4().__str__()
+
+    links_before_target_link = get_previous_links(link_uuid)
+    link_after_target_link = get_next_link(link_uuid)
+
+    print 'Creating new link SQL...'
+    print 'Microservice group?'
+    microservice_group = raw_input()
+
+    default_next_link = get_link_default_next_link_and_prompt_if_nonexistant(link_uuid)
+    sql = """INSERT INTO MicroServiceChainLinks(pk, microserviceGroup, defaultExitMessage, currentTask, defaultNextChainLink) values ('%s', '%s', 'Failed', '%s', '%s');""" % (new_link_uuid, microservice_group, task_uuid, default_next_link)
+
+    sql_commands = sql_commands + sql + "\n"
+
+    exit_code_uuid = uuid.uuid4().__str__()
+
+    sql_commands = sql_commands + generate_exit_code_sql_from_user_input(exit_code_uuid, new_link_uuid, link_after_target_link) + "\n"
+
+    for link in links_before_target_link:
+        sql = """UPDATE MicroServiceChainLinksExitCodes SET nextMicroServiceChainLink='%s' WHERE microServiceChainLink='%s';""" % (new_link_uuid, link)
+        sql_commands += sql + "\n"
+
+    chain_uuid, _ = get_chain_info(link_uuid)
+    if chain_uuid:
+        # must update chain row to insert new link
+        sql = """UPDATE MicroServiceChains SET startingLink='%s' WHERE pk='%s';""" % (new_link_uuid, chain_uuid)
+        sql_commands += sql + "\n"
+
+    # update target link to go to new link
+    print sql_commands
+
+def replace_link_with_existing_task(link_uuid_to_replace, replacement_task_uuid):
+    if not link_exists(link_uuid_to_replace):
+        print 'ERROR: link UUID ' + link_uuid_to_replace + ' does not exist.'
+        return
+
+    if not task_exists(replacement_task_uuid):
+        print 'ERROR: task UUID ' + replacement_task_uuid + ' does not exist.'
+        return
+
+    sql_commands = ''
+
+    new_link_uuid = uuid.uuid4().__str__()
+
+    links_before_target_link = get_previous_links(link_uuid_to_replace)
+    link_after_target_link = get_next_link(link_uuid_to_replace)
+
+    print 'Creating new link SQL...'
+    print 'Microservice group?'
+    microservice_group = raw_input()
+
+    default_next_link = get_link_default_next_link_and_prompt_if_nonexistant(link_uuid_to_replace)
+    sql = """INSERT INTO MicroServiceChainLinks(pk, microserviceGroup, defaultExitMessage, currentTask, defaultNextChainLink) values ('%s', '%s', 'Failed', '%s', '%s');""" % (new_link_uuid, microservice_group, replacement_task_uuid, default_next_link)
+
+    sql_commands = sql_commands + sql + "\n"
+
+    exit_code_uuid = uuid.uuid4().__str__()
+
+    sql_commands = sql_commands + generate_exit_code_sql_from_user_input(exit_code_uuid, new_link_uuid, link_after_target_link) + "\n"
+
+
+    for link in links_before_target_link:
+        sql = """UPDATE MicroServiceChainLinksExitCodes SET nextMicroServiceChainLink='%s' WHERE microServiceChainLink='%s';""" % (new_link_uuid, link)
+        sql_commands += sql + "\n"
+
+    chain_uuid, _ = get_chain_info(link_uuid_to_replace)
+    if chain_uuid:
+        # must update chain row to insert new link
+        sql = """UPDATE MicroServiceChains SET startingLink='%s' WHERE pk='%s';""" % (new_link_uuid, chain_uuid)
+        sql_commands += sql + "\n"
+
+    # update target link to go to new link
+    print sql_commands
+
+
 
 #
 # CLI interface
@@ -456,12 +545,22 @@ if __name__ == '__main__':
             'function':    remove_from_chains,
             'usage':       'removefromchains <linkUUID>',
             'description': 'removes the link from chains'
+        },
+        'replacewithnew': {
+            'function':    replace_link_with_new_link,
+            'usage':       'replacewithnew <link UUID>',
+            'description': 'create a new link and replace an existing link'
+        },
+        'replacewithexisting': {
+            'function':    replace_link_with_existing_task,
+            'usage':       'replacewithexisting <link UUID to replace> <replacement task UUID>',
+            'description': 'replace an existing link with an existing task (creates new link)'
         }
     }
 
     # execute command or show usage
     if command in commands:
         command_function = commands[command]['function']
-        command_function(args.pop(0))
+        command_function(*args)
     else:
         help(parser, commands)
