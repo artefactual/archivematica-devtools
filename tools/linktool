@@ -350,6 +350,8 @@ def insert_link_before_link(link_uuid, options):
     sql_commands = sql_commands + generate_chain_sql(link_uuid, new_link_uuid) + "\n"
 
     print sql_commands
+    if options.execute:
+        querySQL(sql_commands)
 
 def insert_link_after_link(link_uuid, options):
     if not link_exists(link_uuid):
@@ -376,6 +378,8 @@ def insert_link_after_link(link_uuid, options):
 
     # update target link to go to new link
     print sql_commands
+    if options.execute:
+        querySQL(sql_commands)
 
 def show_next(link_uuid):
     print "Next link UUID: " + str(get_next_link(link_uuid))
@@ -402,6 +406,8 @@ def remove_from_chains(link_uuid):
     sql_commands = sql_commands + generate_exit_code_update_sql(links_before_target_link, link_after_target_link) + "\n"
 
     print sql_commands
+    if options.execute:
+        querySQL(sql_commands)
 
 def replace_link_with_new_link(link_uuid, options):
     if not link_exists(link_uuid):
@@ -431,6 +437,8 @@ def replace_link_with_new_link(link_uuid, options):
 
     # update target link to go to new link
     print sql_commands
+    if options.execute:
+        querySQL(sql_commands)
 
 def replace_link_with_existing_task(link_uuid_to_replace, replacement_task_uuid, options):
     if not link_exists(link_uuid_to_replace):
@@ -458,7 +466,8 @@ def replace_link_with_existing_task(link_uuid_to_replace, replacement_task_uuid,
 
     # update target link to go to new link
     print sql_commands
-
+    if options.exectute:
+        querySQL(sql_commands)
 #
 # CLI interface
 #
@@ -480,6 +489,7 @@ if __name__ == '__main__':
     parser.add_option("-a", "--args", action="store", dest="args", type="string", help="the arguments that should be passed to the command")
     parser.add_option("-d", "--description", action="store", dest="description", type="string", help="description of the task")
     parser.add_option("-t", "--tasktype", action="store", dest="task_type", type="string", help="uuid of the task type")
+    parser.add_option("-e", "--execute", action="store_true", dest="execute", default=False, help="execute generated sql")
 
     (options, args) = parser.parse_args()
 
@@ -556,7 +566,7 @@ if __name__ == '__main__':
             'usage':       'replacewithexisting <link UUID to replace> <replacement task UUID>',
             'description': 'replace an existing link with an existing task (creates new link)',
             'has_options': True
-        }
+       }
     }
 
     # execute command or show usage
