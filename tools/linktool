@@ -240,6 +240,19 @@ def generate_exit_code_update_sql(previous_link_uuids, new_link_uuid):
 
     return sql
 
+def generate_remove_chain_link_sql(link_uuid):
+    sql = """DELETE stc FROM StandardTasksConfigs stc JOIN TasksConfigs tc ON stc.pk = tc.taskTypePKReference JOIN MicroServiceChainLinks mscl ON tc.pk = mscl.currentTask WHERE mscl.pk = '%s';\n""" % (link_uuid)
+    sql = sql + """DELETE FROM MicroServiceChainLinksExitCodes WHERE microServiceChainLink = '%s';\n""" % (link_uuid)
+    sql = sql + """DELETE FROM MicroServiceChainLinks WHERE pk = '%s';\n""" % (link_uuid)
+    sql = sql + """DELETE tc FROM TasksConfigs tc JOIN MicroServiceChainLinks mscl ON tc.pk = mscl.currentTask WHERE mscl.pk = '%s';\n""" % (link_uuid)
+
+    return sql
+
+def is_chain_link_used_by_job(link_uuid):
+    sql = """SELECT jobUUID FROM Jobs WHERE MicroServiceChainLinksPk = '%s'""" % (link_uuid)
+    result = simple_multi_value_query(sql)
+
+    return len(result) > 0
 #
 # Command logic
 #
@@ -405,9 +418,23 @@ def remove_from_chains(link_uuid):
 
     sql_commands = sql_commands + generate_exit_code_update_sql(links_before_target_link, link_after_target_link) + "\n"
 
+    sql_remove_commands = generate_remove_chain_link_sql(link_uuid)
+    chain_link_used = is_chain_link_used_by_job(link_uuid)
+
+    # foreign key constraints prevent a link used by a job from being removed
+    if not chain_link_used:
+        sql_commands = sql_commands + sql_remove_commands
+
     print sql_commands
     if options.execute:
         querySQL(sql_commands)
+
+    if chain_link_used:
+        print "WARNING: link UUID " + link_uuid + " in use by one or more jobs"
+        if options.execute:
+            print "WARNING: sql to remove link not run"
+        print sql_remove_commands
+
 
 def replace_link_with_new_link(link_uuid, options):
     if not link_exists(link_uuid):
@@ -435,10 +462,23 @@ def replace_link_with_new_link(link_uuid, options):
 
     sql_commands = sql_commands + generate_chain_sql(link_uuid, new_link_uuid) + "\n"
 
+    sql_remove_commands = generate_remove_chain_link_sql(link_uuid) + "\n"
+    chain_link_used = is_chain_link_used_by_job(link_uuid)
+
+    # foreign key constraints prevent a link used by a job from being removed
+    if not chain_link_used:
+        sql_commands = sql_commands + sql_remove_commands
+
     # update target link to go to new link
     print sql_commands
     if options.execute:
         querySQL(sql_commands)
+
+    if chain_link_used:
+        print "WARNING: link UUID " + link_uuid + " in use by one or more jobs"
+        if options.execute:
+            print "WARNING: sql to remove link not run"
+        print sql_remove_commands
 
 def replace_link_with_existing_task(link_uuid_to_replace, replacement_task_uuid, options):
     if not link_exists(link_uuid_to_replace):
@@ -464,10 +504,23 @@ def replace_link_with_existing_task(link_uuid_to_replace, replacement_task_uuid,
 
     sql_commands = sql_commands + generate_chain_sql(link_uuid_to_replace, new_link_uuid) + "\n"
 
+    sql_remove_commands = generate_remove_chain_link_sql(link_uuid_to_replace) + "\n"
+    chain_link_used = is_chain_link_used_by_job(link_uuid_to_replace)
+
+    # foreign key constraints prevent a link used by a job from being removed
+    if not chain_link_used:
+        sql_commands = sql_commands + sql_remove_commands
+
     # update target link to go to new link
     print sql_commands
-    if options.exectute:
+    if options.execute:
         querySQL(sql_commands)
+
+    if chain_link_used:
+        print "WARNING: link UUID " + link_uuid_to_replace + " in use by one or more jobs"
+        if options.execute:
+            print "WARNING: sql to remove link not run"
+        print sql_remove_commands
 #
 # CLI interface
 #
