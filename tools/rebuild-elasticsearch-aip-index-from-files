@@ -29,6 +29,7 @@ import sys
 import time
 import tempfile
 
+import django
 from lxml import etree
 
 sys.path.append("/usr/lib/archivematica/archivematicaCommon")
@@ -39,6 +40,7 @@ NSMAP = {
     'm': 'http://www.loc.gov/METS/',
     'x': 'http://www.w3.org/1999/xlink',
 }
+django.setup()
 
 def extract_file(archive_path, destination_dir, relative_path):
     """ Extracts `relative_path` from `archive_path` into `destination_dir`. """
@@ -103,8 +105,14 @@ def processAIPThenDeleteMETSFile(path, temp_dir, es_client, delete_existing_data
 
     if delete_existing_data is True:
         print('Deleting AIP', aip_uuid, 'from aips/aip and aips/aipfile.')
-        elasticSearchFunctions.delete_aip(es_client, aip_uuid)
-        elasticSearchFunctions.delete_aip_files(es_client, aip_uuid)
+        try:
+            elasticSearchFunctions.delete_aip(es_client, aip_uuid)
+        except TypeError:
+            elasticSearchFunctions.delete_aip(aip_uuid)  # AM 1.5
+        try:
+            elasticSearchFunctions.delete_aip_files(es_client, aip_uuid)
+        except AttributeError:
+            elasticSearchFunctions.connect_and_delete_aip_files(aip_uuid)  # AM 1.5
 
     # AIP filenames are <name>-<uuid><extension>
     # Index of match end is right before the extension
@@ -128,24 +136,45 @@ def processAIPThenDeleteMETSFile(path, temp_dir, es_client, delete_existing_data
         if aip_type == "Archival Information Collection":
             aips_in_aic = get_aips_in_aic(root, path, temp_dir)
 
-    elasticSearchFunctions.index_aip(
-        client=es_client,
-        uuid=aip_uuid,
-        name=aip_name,
-        filePath=path,
-        pathToMETS=path_to_mets,
-        aips_in_aic=aips_in_aic,
-        identifiers=[],  # TODO get these
-    )
-    elasticSearchFunctions.index_mets_file_metadata(
-        client=es_client,
-        uuid=aip_uuid,
-        metsFilePath=path_to_mets,
-        index='aips',
-        type_='aipfile',
-        sipName=aip_name,
-        identifiers=[],  # TODO get these
-    )
+    try:
+        elasticSearchFunctions.index_aip(
+            client=es_client,
+            uuid=aip_uuid,
+            name=aip_name,
+            filePath=path,
+            pathToMETS=path_to_mets,
+            aips_in_aic=aips_in_aic,
+            identifiers=[],  # TODO get these
+        )
+    except AttributeError:  # AM 1.5
+        elasticSearchFunctions.connect_and_index_aip(
+            uuid=aip_uuid,
+            name=aip_name,
+            filePath=path,
+            pathToMETS=path_to_mets,
+            aips_in_aic=aips_in_aic,
+            identifiers=[],  # TODO get these
+        )
+    try:
+        elasticSearchFunctions.index_mets_file_metadata(
+            client=es_client,
+            uuid=aip_uuid,
+            metsFilePath=path_to_mets,
+            index='aips',
+            type_='aipfile',
+            sipName=aip_name,
+            identifiers=[],  # TODO get these
+        )
+    except TypeError:  # AM 1.5
+        elasticSearchFunctions.index_mets_file_metadata(
+            conn=es_client,
+            uuid=aip_uuid,
+            metsFilePath=path_to_mets,
+            index='aips',
+            type='aipfile',
+            sipName=aip_name,
+            identifiers=[],  # TODO get these
+        )
 
 
 def main():
@@ -167,8 +196,12 @@ def main():
         sys.exit(1)
 
     # Verify ES is accessible
-    elasticSearchFunctions.setup_reading_from_client_conf()
-    es_client = elasticSearchFunctions.get_client()
+    try:
+        elasticSearchFunctions.setup_reading_from_client_conf()
+        es_client = elasticSearchFunctions.get_client()
+    except AttributeError:
+        es_client = elasticSearchFunctions.Elasticsearch(hosts=elasticSearchFunctions.getElasticsearchServerHostAndPort())  # AM 1.5
+
     try:
         es_client.info()
     except Exception:
@@ -180,7 +213,10 @@ def main():
         print('Deleting all AIPs in the AIP index')
         time.sleep(3)  # Time for the user to panic and kill the process
         es_client.indices.delete('aips', ignore=404)
-        elasticSearchFunctions.create_indexes_if_needed(es_client)
+        try:
+            elasticSearchFunctions.create_indexes_if_needed(es_client)
+        except AttributeError:
+            elasticSearchFunctions.check_server_status_and_create_indexes_if_needed()  # AM 1.5
 
     if not args.uuid:
         print("Rebuilding AIPS index from AIPS in", args.rootdir)
