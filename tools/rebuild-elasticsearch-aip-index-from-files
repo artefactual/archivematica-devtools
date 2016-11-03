@@ -18,19 +18,21 @@
 # You should have received a copy of the GNU General Public License
 # along with Archivematica.  If not, see <http://www.gnu.org/licenses/>.
 
-import ConfigParser
+from __future__ import print_function
+
+import argparse
 import shutil
-from lxml import etree
-from optparse import OptionParser
 import os
 import re
 import subprocess
 import sys
+import time
 import tempfile
+
+from lxml import etree
+
 sys.path.append("/usr/lib/archivematica/archivematicaCommon")
-import elasticSearchFunctions, databaseInterface
-sys.path.append("/usr/lib/archivematica/archivematicaCommon/externals")
-import pyes
+import elasticSearchFunctions
 
 NSMAP = {
     'dc': 'http://purl.org/dc/terms/',
@@ -40,45 +42,23 @@ NSMAP = {
 
 def extract_file(archive_path, destination_dir, relative_path):
     """ Extracts `relative_path` from `archive_path` into `destination_dir`. """
-    if archive_path.endswith('.tar.bz2'):
-        strip_components = len(relative_path.split('/'))-1
-        command_data = [
-            'tar',
-            'xvjf',
-            archive_path,
-            '-C' + destination_dir,
-            '--strip-components={}'.format(strip_components), # Output not in subfolder
-            relative_path
-        ]
+    if os.path.isdir(archive_path):
+        output_path = os.path.join(destination_dir, os.path.basename(relative_path))
+        shutil.copy(os.path.join(archive_path, relative_path), output_path)
     else:
         command_data = [
-            '7za',
-            'e',
-            '-o' + destination_dir,
+            'unar',
+            '-force-overwrite',
+            '-o', destination_dir,
             archive_path,
-            relative_path
+            relative_path,
         ]
 
-    print 'Command to run:', command_data
-    subprocess.call(command_data)
+        print('Command to run:', command_data)
+        subprocess.call(command_data)
+        output_path = os.path.join(destination_dir, relative_path)
 
-    output_path = os.path.join(destination_dir, os.path.basename(relative_path))
     return output_path
-
-def delete_aip_related_data(uuid):
-    print "Deleting AIP files..."
-    deleted = elasticSearchFunctions.connect_and_delete_aip_files(uuid)
-    print "Deleted " + str(deleted) + " AIP files."
-
-    print "Deleting AIP..."
-    deleted = elasticSearchFunctions.delete_matching_documents(
-        'aips',
-        'aip',
-        'uuid',
-        uuid,
-        max_documents=1
-    )
-    print "Deleted " + str(deleted) + " AIPs."
 
 def get_aips_in_aic(mets_root, archive_path, temp_dir):
     """ Returns the number of AIPs in the AIC, extracted from AIC METS file. """
@@ -109,7 +89,7 @@ def get_aips_in_aic(mets_root, archive_path, temp_dir):
     return aips_in_aic
 
 
-def processAIPThenDeleteMETSFile(path, temp_dir, delete_existing_data = False):
+def processAIPThenDeleteMETSFile(path, temp_dir, es_client, delete_existing_data=False):
     archive_file = os.path.basename(path)
 
     # Regex match the UUID - AIP might end with .7z, .tar.bz2, or something else
@@ -119,19 +99,21 @@ def processAIPThenDeleteMETSFile(path, temp_dir, delete_existing_data = False):
     else:
         return -1
 
-    print '*'*25
-    print 'Processing AIP ' + aip_uuid + '...'
+    print('Processing AIP', aip_uuid)
 
-    if delete_existing_data == True:
-        print "Deleting existing AIP-related data..."
-        delete_aip_related_data(aip_uuid)
+    if delete_existing_data is True:
+        print('Deleting AIP', aip_uuid, 'from aips/aip and aips/aipfile.')
+        elasticSearchFunctions.delete_aip(es_client, aip_uuid)
+        elasticSearchFunctions.delete_aip_files(es_client, aip_uuid)
 
     # AIP filenames are <name>-<uuid><extension>
     # Index of match end is right before the extension
     subdir = archive_file[:match.end()]
     aip_name = subdir[:-37]
     mets_file = "METS." + aip_uuid + ".xml"
-    mets_file_relative_path = os.path.join(subdir,"data", mets_file)
+    mets_file_relative_path = os.path.join("data", mets_file)
+    if os.path.isfile(path):
+        mets_file_relative_path = os.path.join(subdir, mets_file_relative_path)
     path_to_mets = extract_file(archive_path=path,
         destination_dir=temp_dir, relative_path=mets_file_relative_path)
 
@@ -146,96 +128,112 @@ def processAIPThenDeleteMETSFile(path, temp_dir, delete_existing_data = False):
         if aip_type == "Archival Information Collection":
             aips_in_aic = get_aips_in_aic(root, path, temp_dir)
 
-    elasticSearchFunctions.connect_and_index_files('aips', 'aipfile', aip_uuid, temp_dir)
-    elasticSearchFunctions.connect_and_index_aip(aip_uuid, aip_name, path, path_to_mets, aips_in_aic=aips_in_aic)
-    os.remove(path_to_mets)
+    elasticSearchFunctions.index_aip(
+        client=es_client,
+        uuid=aip_uuid,
+        name=aip_name,
+        filePath=path,
+        pathToMETS=path_to_mets,
+        aips_in_aic=aips_in_aic,
+        identifiers=[],  # TODO get these
+    )
+    elasticSearchFunctions.index_mets_file_metadata(
+        client=es_client,
+        uuid=aip_uuid,
+        metsFilePath=path_to_mets,
+        index='aips',
+        type_='aipfile',
+        sipName=aip_name,
+        identifiers=[],  # TODO get these
+    )
 
 
 def main():
-    usage = "usage: %prog [options] <path to AIP store>"
+    parser = argparse.ArgumentParser(description='Recreate the ElasticSearch AIP index from AIPS accessible locally')
 
-    parser = OptionParser(usage=usage)
+    parser.add_argument('-d', '--delete', action='store_true',
+        help='Delete AIP-related ElasticSearch data before indexing AIP data')
+    parser.add_argument('--delete-all', action='store_true',
+        help='Delete all AIP information in the index before starting. This will remove ElasticSearch entries for AIPS that do not exist in the provided directory.')
+    parser.add_argument('-u', '--uuid', action='store', default='',
+        help='Specify a single AIP by UUID to process')
+    parser.add_argument('rootdir', help='Path to the directory containing the AIPs', metavar='PATH')
 
-    parser.add_option('-d', '--delete', action='store_true', dest='delete',
-        help='delete AIP-related ElasticSearch data before indexing AIP data')
+    args = parser.parse_args()
 
-    parser.add_option('-u', '--uuid', action='store', type='string', dest='uuid',
-        help='specify a single AIP, by UUID, to process')
+    # Check root directory exists
+    if not os.path.isdir(args.rootdir):
+        print("AIP store location doesn't exist.")
+        sys.exit(1)
 
-    # Determine root of shared directories
-    clientConfigFilePath = '/etc/archivematica/MCPClient/clientConfig.conf'
-    config = ConfigParser.SafeConfigParser()
-    config.read(clientConfigFilePath)
-
+    # Verify ES is accessible
+    elasticSearchFunctions.setup_reading_from_client_conf()
+    es_client = elasticSearchFunctions.get_client()
     try:
-        sharedDirectory = config.get('MCPClient', "sharedDirectoryMounted")
-    except:
-        print "Configuration item 'sharedDirectoryMounted' not available at /etc/archivematica/MCPClient/clientConfig.conf."
-        os._exit(1)
+        es_client.info()
+    except Exception:
+        print("Error: Elasticsearch may not be running.")
+        sys.exit(1)
 
-    # Clear database backups of indexed AIPs
-    sql = "DELETE FROM ElasticsearchIndexBackup WHERE indexName='aips' AND typeName='aipfile'"
-    databaseInterface.runSQL(sql)
+    # Delete existing data also clears AIPS not found in the provided directory
+    if args.delete_all:
+        print('Deleting all AIPs in the AIP index')
+        time.sleep(3)  # Time for the user to panic and kill the process
+        es_client.indices.delete('aips', ignore=404)
+        elasticSearchFunctions.create_indexes_if_needed(es_client)
 
-    # Get options from command-line
-    (opts, args) = parser.parse_args()
-
-    if len(args) < 1:
-        root_dir = ''
+    if not args.uuid:
+        print("Rebuilding AIPS index from AIPS in", args.rootdir)
     else:
-        root_dir = args[0]
-
-    options = {
-        'root_dir': root_dir,
-        'uuid': opts.uuid,
-        'delete': opts.delete
-    }
-
-    # Set root directory
-    try:
-        rootdir = options['root_dir']
-        if not os.path.exists(rootdir):
-            print "AIP store location doesn't exist."
-            os._exit(1)
-    except:
-        parser.print_help()
-        rootdir = os.path.join(sharedDirectory, 'www', 'AIPsStore')
-        print
-        print 'Default path to AIP store is: ' + rootdir
-        os._exit(1)
-
-    if options['uuid'] == None:
-        print "Rebuilding AIPS index from AIPS in " + rootdir + "..."
-    else:
-        print "Rebuilding AIP UUID " + options['uuid']
-
-    conn = pyes.ES(elasticSearchFunctions.getElasticsearchServerHostAndPort())
-    try:
-        conn._send_request('GET', '')
-    except pyes.exceptions.NoServerAvailable:
-        print "Connection error: Is Elasticsearch running?"
-        os._exit(1)
+        print("Rebuilding AIP UUID", args.uuid)
 
     temp_dir = tempfile.mkdtemp()
     count = 0
+    name_regex = r"-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    dir_regex = r"-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 
-    for root, subFolders, files in os.walk(rootdir):
+    for root, directories, files in os.walk(args.rootdir):
+        # Uncompressed AIPs
+        for directory in directories:
+            # Check if dir name matches AIP name format
+            match = re.search(dir_regex, directory)
+            if not match:
+                continue
+            # If running on a single AIP, skip all others
+            if args.uuid and args.uuid.lower() not in directory.lower():
+                continue
+            count += 1
+            processAIPThenDeleteMETSFile(
+                path=os.path.join(root, directory),
+                temp_dir=temp_dir,
+                es_client=es_client,
+                delete_existing_data=args.delete,
+            )
+            # Don't recurse into this directory
+            directories = directories.remove(directory)
+
+        # Compressed AIPs
         for filename in files:
-            if filename.endswith(('.7z', '.tar.bz2')) and (
-              options['uuid'] == None or
-              options['uuid'].lower() in filename.lower()):
-                count += 1
-                processAIPThenDeleteMETSFile(
-                    os.path.join(root, filename),
-                    temp_dir,
-                    options['delete']
-                )
+            # Check if filename matches AIP name format
+            match = re.search(name_regex, filename)
+            if not match:
+                continue
+            # If running on a single AIP, skip all others
+            if args.uuid and args.uuid.lower() not in filename.lower():
+                continue
+            count += 1
+            processAIPThenDeleteMETSFile(
+                path=os.path.join(root, filename),
+                temp_dir=temp_dir,
+                es_client=es_client,
+                delete_existing_data=args.delete,
+            )
 
-    print "Cleaning up..."
+    print("Cleaning up")
 
     shutil.rmtree(temp_dir)
 
-    print "Indexing complete. Indexed", count, "files"
+    print("Indexing complete. Indexed", count, "AIPs")
 
 
 if __name__ == '__main__':
