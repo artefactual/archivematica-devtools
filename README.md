@@ -72,6 +72,8 @@ Tools Provided
 
 ### graph-links
 
+*Versions*: Archivematica 1.4, 1.5, 1.6
+
 graph-links creates an SVG graph of the workflow in Archivematica. For more information on how this workflow is implemented, see the [MCP docs](https://wiki.archivematica.org/MCP) or the [MCP task type docs](https://wiki.archivematica.org/MCP/TaskTypes).
 
 Each node represents one MicroServiceChainLinks entry, and points to the node that runs after it.  Nodes that are the start of a MicroServiceChain are bordered in gold, all other nodes are bordered in black. Each node contains 3 lines of information:
@@ -113,6 +115,8 @@ Edges are labelled with the user choice or exit code that connects those nodes, 
 
 ### rebuild-elasticsearch-aip-index-from-files
 
+*Versions*: Archivematica 1.5, 1.6
+
 rebuild-elasticsearch-aip-index-from-files will recreate the ElasticSearch index from AIPs stored on disk.
 This is useful if the ElasticSearch index has been deleted or damaged, but you still have access to the AIPs in a local filesystem.
 This is not intended for AIPs not stored in a local filesystem, for example Duracloud.
@@ -132,6 +136,8 @@ This is useful if there are AIPs indexed that have been deleted.
 This should not be used if there are AIPs stored that are not locally accessible.
 
 ### reindex-index-data
+
+*Versions*: Archivematica 1.5
 
 reindex-index-data will delete and re-index an ElasticSearch index, creating it with an updated mapping based on the currently installed Archivematica instance.
 This is useful if the mapping has changed in an incompatible way but the existing data should be preserved.
