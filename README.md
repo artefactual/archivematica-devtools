@@ -17,6 +17,7 @@ While these are primarily intended for use in development, Archivematica systems
 - [Installation](#installation)
 - [Tools Provided](#tools-provided)
   - [graph-links](#graph-links)
+  - [rebuild-elasticsearch-aip-index-from-files](#rebuild-elasticsearch-aip-index-from-files)
   - [reindex-index-data](#reindex-index-data)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
@@ -109,6 +110,26 @@ Edges are labelled with the user choice or exit code that connects those nodes, 
 * Brown: Magic Links
   * Source: `MicroServiceChainLinks.pk` where taskType is 'goto magic link' (`6fe259c2-459d-4d4b-81a4-1b9daf7ee2e9`)
   * Destination: `Transfer.magicLink`. This is set by the most recent 'assign magic link' (`3590f73d-5eb0-44a0-91a6-5b2db6655889`)
+
+### rebuild-elasticsearch-aip-index-from-files
+
+rebuild-elasticsearch-aip-index-from-files will recreate the ElasticSearch index from AIPs stored on disk.
+This is useful if the ElasticSearch index has been deleted or damaged, but you still have access to the AIPs in a local filesystem.
+This is not intended for AIPs not stored in a local filesystem, for example Duracloud.
+
+This must be run on the same system that Archivematica is installed on, since it uses code from the Archivematica codebase.
+
+The one required parameter is the path to the directory where the AIPs are stored.
+In a default Archivematica installation, this is `/var/archivematica/sharedDirectory/www/AIPsStore/`
+
+An optional parameter `-u` or `--uuid` may be passed to only reindex the AIP that has the matching UUID.
+
+`--delete` will delete any data found in ElasticSearch with a matching UUID before re-indexing.
+This is useful if only some AIPs are missing from the index, since AIPs that already exist will not have their information duplicated.
+
+`--delete-all` will delete the entire AIP ElasticSearch index before starting.
+This is useful if there are AIPs indexed that have been deleted.
+This should not be used if there are AIPs stored that are not locally accessible.
 
 ### reindex-index-data
 
