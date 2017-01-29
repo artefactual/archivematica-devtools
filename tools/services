@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+
+# This file is part of the Archivematica development tools.
+#
+# Copyright 2010-2017 Artefactual Systems Inc. <http://artefactual.com>
+#
+# Archivematica is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Archivematica is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Archivematica.  If not, see <http://www.gnu.org/licenses/>.
+
+function storage_service()
+{
+    {
+      sudo $ACTION archivematica-storage-service
+    } || { # catch, try with uwsgi in case this is 1.5 style deployment
+        {
+            sudo service uwsgi $ACTION
+        } || {
+            echo "storage_service $ACTION did not work"
+        }
+    }
+}
+
+function dashboard()
+{
+    {
+      sudo $ACTION archivematica-dashboard
+    } || { # catch, try with apoache in case this is 1.5 style deployment
+        {
+            sudo service apache2 $ACTION
+        } || {
+            echo "dashboard $ACTION did not work"
+        }
+    }
+}
+
+function mcp_server()
+{
+    {
+        sudo $ACTION archivematica-mcp-server
+    } || {
+        echo "mcp server $ACTION did not work"
+    }
+}
+
+function mcp_client()
+{
+    {
+        sudo $ACTION archivematica-mcp-client
+    } || {
+        echo "mcp client $ACTION did not work"
+    }
+}
+
+function full()
+{
+    #handle all services, not just am specific ones
+    sudo service gearman-job-server "$ACTION"
+    sudo "$ACTION" fits
+    sudo service clamav-daemon "$ACTION"
+    sudo service elasticsearch "$ACTION"
+    sudo service nginx "$ACTION"
+
+    #only needed if old style
+    #sudo service apache2 $ACTION >/dev/null 2>$1 
+    #sudo service uwsgi $ACTION >/dev/null 2>$1 
+    storage_service
+    mcp_server
+    mcp_client
+    dashboard
+}
+
+
+#defaults
+ACTION="restart"
+LEVEL="basic"
+#look for user supplied parameters
+{
+    [ $# -gt 0 ] && ACTION=$1
+}
+{
+    [ $# -gt 1 ] && LEVEL=$2
+}
+
+case $ACTION in
+'help')
+    echo "am services: manage archivematica services"
+    echo "Usage: am services <action> <level>"
+    echo "    action can be one of 'restart (default), start, stop, status, help'"
+    echo "    level can be one of 'basic (default), full, storage_service, pipeline'"
+    exit 1
+;;
+'*')
+    echo "attempting $LEVEL $ACTION"
+;;
+esac
+
+case $LEVEL in
+'basic')
+    storage_service
+    mcp_server
+    mcp_client
+    dashboard
+;;
+'full')
+    full
+;;
+'storage_service')
+    storage_service
+;;
+'pipeline')
+    mcp_server
+    mcp_client
+    dashboard
+;;
+esac
+
+echo "$LEVEL $ACTION complete"
+

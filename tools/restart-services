@@ -2,7 +2,7 @@
 
 # This file is part of the Archivematica development tools.
 #
-# Copyright 2010-2016 Artefactual Systems Inc. <http://artefactual.com>
+# Copyright 2010-2017 Artefactual Systems Inc. <http://artefactual.com>
 #
 # Archivematica is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -17,27 +17,52 @@
 # You should have received a copy of the GNU General Public License
 # along with Archivematica.  If not, see <http://www.gnu.org/licenses/>.
 
-sudo service gearman-job-server stop
-sudo stop archivematica-mcp-server
-sudo stop archivematica-mcp-client
-sudo stop fits
-sudo service elasticsearch stop
-sudo service apache2 stop
-sudo service nginx stop
-sudo service uwsgi stop
-sleep 1
 
-if [ -e "/tmp/archivematicaMCPServerPID" ]
-then
-  sudo kill -9 $(cat /tmp/archivematicaMCPServerPID)
+function restart_services() {
+    sudo service gearman-job-server stop
+    sudo stop archivematica-mcp-server
+    sudo stop archivematica-mcp-client
+    sudo stop fits
+    sudo service elasticsearch stop
+    sudo service apache2 stop
+    sudo service nginx stop
+    sudo service uwsgi stop
+    sleep 1
+
+    if [ -e "/tmp/archivematicaMCPServerPID" ]
+    then
+    sudo kill -9 $(cat /tmp/archivematicaMCPServerPID)
+    fi
+
+    sleep 3
+    sudo service elasticsearch start
+    sudo service gearman-job-server start
+    sudo start fits
+    sudo service nginx start
+    sudo service uwsgi start
+    sudo start archivematica-mcp-server
+    sudo start archivematica-mcp-client
+    sudo service apache2 start
+}
+
+{
+    [ -z "$1" ] && VERSION="1.5"
+} || {
+    VERSION="$1"
+}
+
+echo "version is $VERSION"
+if [ $VERSION == "1.5" ]; then
+    echo "If you are trying to use this command with Archivmeatica 1.6.0 or later,"
+    echo "there is a new command 'am services', try 'am services help' for more info."
+    echo " "
+    restart_services
+else
+    {
+        echo "try using the newer 'am services' command, see 'am services help' for more info."
+        echo "trying with $2"
+        [ -z "$2" ] && am services $2
+    } || {
+        am services
+    }
 fi
-
-sleep 3
-sudo service elasticsearch start
-sudo service gearman-job-server start
-sudo start fits
-sudo service nginx start
-sudo service uwsgi start
-sudo start archivematica-mcp-server
-sudo start archivematica-mcp-client
-sudo service apache2 start
