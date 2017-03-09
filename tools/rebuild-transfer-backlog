@@ -1,0 +1,166 @@
+#!/usr/bin/env python2
+# -*- coding: utf-8 -*-
+
+# This file is part of the Archivematica development tools.
+#
+# Copyright 2010-2016 Artefactual Systems Inc. <http://artefactual.com>
+#
+# Archivematica is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Archivematica is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Archivematica.  If not, see <http://www.gnu.org/licenses/>.
+
+from __future__ import print_function
+
+import ConfigParser
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import xml.etree.ElementTree as ElementTree
+
+import django
+
+import elasticSearchFunctions
+from main.models import File, Transfer
+import storageService
+
+sys.path.append('/usr/lib/archivematica/MCPClient/clientScripts')
+import sanitizeNames
+
+
+django.setup()
+
+
+def get_file_checksum(path):
+    p = subprocess.Popen(['sha256sum', path], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, err = p.communicate()
+    return out.split(' ')[0]
+
+
+def process_transfer(es_client, path):
+    transfer_dir = os.path.basename(path)
+    uuid = transfer_dir[-36:]
+
+    # Parse METS data
+    tree = ElementTree.parse(os.path.join(path, 'metadata/submissionDocumentation/METS.xml'))
+    root = tree.getroot()
+
+    # Attempt to insert row in MySQL Transfers table if it doesn't already exist
+    try:
+        Transfer.objects.create(uuid=uuid, currentlocation=os.path.join('%sharedPath%www/AIPsStore/transferBacklog/originals/', transfer_dir))
+    except django.db.utils.IntegrityError:
+        pass
+
+    # Extract list of files from METS data so as to populate the MySQL Files table
+    files = root.findall("{http://www.loc.gov/METS/}fileSec/{http://www.loc.gov/METS/}fileGrp/{http://www.loc.gov/METS/}file")
+    for file in files:
+        id = file.attrib['ID'][-36:]
+
+        # Extract original path
+        location = file.find('{http://www.loc.gov/METS/}FLocat')
+        file_path = location.attrib['{http://www.w3.org/1999/xlink}href']
+
+        # Create sanitized version of path
+        path_to_object = os.path.dirname(file_path)
+        file_basename_sanitized = sanitizeNames.sanitizeName(os.path.basename(file_path))
+
+        # Calculate filesize
+        real_file_path = os.path.join(path, path_to_object, file_basename_sanitized)
+        file_size = str(os.path.getsize(real_file_path))
+
+        location_with_token = '%transferDirectory%' + path_to_object + '/' + file_basename_sanitized
+        checksum = get_file_checksum(real_file_path)
+
+        # Attempt to insert row in MySQL Files table if it doesn't already exist
+        try:
+            File.objects.create(uuid=id, originallocation=location_with_token, currentlocation=location_with_token, transfer_id=uuid, size=file_size, checksum=checksum, filegrpuse='original')
+        except django.db.utils.IntegrityError:
+            pass
+
+    path = os.path.join(path, '')  # To comply with the path form expected by elasticSearchFunctions.index_files
+    try:
+        elasticSearchFunctions.index_files(es_client, 'transfers', 'transferfile', uuid, path, status='backlog')
+    except AttributeError:
+        elasticSearchFunctions.connect_and_index_files('transfers', 'transferfile', uuid, path)  # AM 1.5
+        elasticSearchFunctions.connect_and_change_transfer_file_status(uuid, 'backlog')  # AM 1.5
+
+
+def main():
+    # Make sure the user knows what he or she is going to do
+    print('WARNING: This script will delete your current ElasticSearch transfer data, rebuilding it using files.')
+    proceed = raw_input('Are you sure you want to continue? (yes/no)\n')
+    if proceed != 'yes':
+        print("You didn't enter 'yes': exiting.")
+        sys.exit(0)
+
+    # Determine root of shared directories
+    clientConfigFilePath = '/etc/archivematica/MCPClient/clientConfig.conf'
+    config = ConfigParser.SafeConfigParser()
+    config.read(clientConfigFilePath)
+
+    try:
+        sharedDirectory = config.get('MCPClient', 'sharedDirectoryMounted')
+    except:
+        print('Configuration item "sharedDirectoryMounted" not available at /etc/archivematica/MCPClient/clientConfig.conf.')
+        sys.exit(1)
+
+    # Set transfer backlog directory
+    try:
+        transfer_backlog_dir = sys.argv[1]
+        if not os.path.exists(transfer_backlog_dir):
+            print("Transfer Backlog location doesn't exist.")
+            sys.exit(1)
+    except IndexError:
+        print('Usage: am rebuild-transfer-backlog <Full path to Transfer Backlog>')
+        sys.exit(1)
+
+    print('Rebuilding transfer index from transfer backlog in', transfer_backlog_dir)
+
+    # Verify ES is accessible
+    try:
+        elasticSearchFunctions.setup_reading_from_client_conf()
+        es_client = elasticSearchFunctions.get_client()
+    except AttributeError:
+        es_client = elasticSearchFunctions.Elasticsearch(hosts=elasticSearchFunctions.getElasticsearchServerHostAndPort())  # AM 1.5
+
+    try:
+        es_client.info()
+    except Exception:
+        print("Error: Elasticsearch may not be running.")
+        sys.exit(1)
+
+    print('Deleting all transfers in the "transfers" index')
+    time.sleep(3)  # Time for the user to panic and kill the process
+    es_client.indices.delete('transfers', ignore=404)
+    try:
+        elasticSearchFunctions.create_indexes_if_needed(es_client)
+    except AttributeError:
+        elasticSearchFunctions.check_server_status_and_create_indexes_if_needed()  # AM 1.5
+
+    for directory in os.listdir(transfer_backlog_dir):
+        if directory == '.gitignore':
+            continue
+        process_transfer(es_client, os.path.join(transfer_backlog_dir, directory))
+
+        # TODO: add method to storageService module
+        print("Requesting transfer reindex in Storage Service...")
+        transfer_uuid = directory[-36:]
+        ss_api = storageService._storage_api()
+        ss_api.file(transfer_uuid).reindex().post()
+
+    print("Indexing complete.")
+
+
+if __name__ == '__main__':
+    main()

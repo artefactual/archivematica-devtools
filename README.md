@@ -19,6 +19,7 @@ While these are primarily intended for use in development, Archivematica systems
   - [graph-links](#graph-links)
   - [get-fpr-changes](#get-fpr-changes)
   - [rebuild-elasticsearch-aip-index-from-files](#rebuild-elasticsearch-aip-index-from-files)
+  - [rebuild-transfer-backlog](#rebuild-transfer-backlog)
   - [reindex-index-data](#reindex-index-data)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
@@ -136,8 +137,8 @@ There are three required parameters: the old JSON, the new JSON & the output loc
 
 *Versions*: Archivematica 1.5, 1.6
 
-rebuild-elasticsearch-aip-index-from-files will recreate the ElasticSearch index from AIPs stored on disk.
-This is useful if the ElasticSearch index has been deleted or damaged, but you still have access to the AIPs in a local filesystem.
+rebuild-elasticsearch-aip-index-from-files will recreate the Elasticsearch index from AIPs stored on disk.
+This is useful if the Elasticsearch index has been deleted or damaged, but you still have access to the AIPs in a local filesystem.
 This is not intended for AIPs not stored in a local filesystem, for example Duracloud.
 
 This must be run on the same system that Archivematica is installed on, since it uses code from the Archivematica codebase.
@@ -147,12 +148,24 @@ In a default Archivematica installation, this is `/var/archivematica/sharedDirec
 
 An optional parameter `-u` or `--uuid` may be passed to only reindex the AIP that has the matching UUID.
 
-`--delete` will delete any data found in ElasticSearch with a matching UUID before re-indexing.
+`--delete` will delete any data found in Elasticsearch with a matching UUID before re-indexing.
 This is useful if only some AIPs are missing from the index, since AIPs that already exist will not have their information duplicated.
 
-`--delete-all` will delete the entire AIP ElasticSearch index before starting.
+`--delete-all` will delete the entire AIP Elasticsearch index before starting.
 This is useful if there are AIPs indexed that have been deleted.
 This should not be used if there are AIPs stored that are not locally accessible.
+
+### rebuild-transfer-backlog
+
+*Versions*: Archivematica 1.6
+
+rebuild-transfer-backlog will recreate the `transfers` Elasticsearch index from the Transfer Backlog location. This is useful if the Elasticsearch index has been deleted or damaged or during software upgrades where the document schema has changed.
+
+It also requests the Storage Service to reindex the transfers.
+
+This must be run on the same system that Archivematica is installed on, since it uses code from the Archivematica codebase.
+
+The one required parameter is the path to the directory where Transfer Backlog location is stored.
 
 ### reindex-index-data
 
