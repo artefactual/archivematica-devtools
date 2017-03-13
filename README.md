@@ -159,7 +159,8 @@ This should not be used if there are AIPs stored that are not locally accessible
 
 *Versions*: Archivematica 1.6
 
-rebuild-transfer-backlog will recreate the `transfers` Elasticsearch index from the Transfer Backlog location. This is useful if the Elasticsearch index has been deleted or damaged or during software upgrades where the document schema has changed.
+rebuild-transfer-backlog will recreate the `transfers` Elasticsearch index from the Transfer Backlog location.
+This is useful if the Elasticsearch index has been deleted or damaged or during software upgrades where the document schema has changed.
 
 It also requests the Storage Service to reindex the transfers.
 
