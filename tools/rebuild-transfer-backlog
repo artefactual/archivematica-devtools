@@ -128,7 +128,15 @@ def main():
 
     # Set transfer backlog directory
     try:
-        transfer_backlog_dir = sys.argv[1]
+        user_tbd = sys.argv[1]
+        # The user will pass in something like
+        # /var/archivematica/sharedDirectory/www/AIPsStore/transferBacklog/
+        # because that's what is displayed in the SS GUI.
+        # However, the transfers in backlog are actually stored in an originals/
+        # subdir, e.g.,
+        # /var/archivematica/sharedDirectory/www/AIPsStore/transferBacklog/originals/
+        # so we add that subdir here.
+        transfer_backlog_dir = os.path.join(user_tbd, 'originals')
         if not os.path.exists(transfer_backlog_dir):
             print("Transfer Backlog location doesn't exist.")
             sys.exit(1)
@@ -136,7 +144,7 @@ def main():
         print('Usage: am rebuild-transfer-backlog <Full path to Transfer Backlog>')
         sys.exit(1)
 
-    print('Rebuilding transfer index from transfer backlog in', transfer_backlog_dir)
+    print('Rebuilding transfer index from transfer backlog in', user_tbd)
 
     # Verify ES is accessible
     try:
