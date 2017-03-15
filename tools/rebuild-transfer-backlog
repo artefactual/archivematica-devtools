@@ -77,6 +77,11 @@ def process_transfer(es_client, path, sharedDirectory):
         location = file.find('{http://www.loc.gov/METS/}FLocat')
         file_path = location.attrib['{http://www.w3.org/1999/xlink}href']
 
+        # Deleted archives (e.g., .zip) files will be listed in the transfer
+        # METS.xml but they will not exist on disk.
+        if not os.path.exists(file_path):
+            continue
+
         # Create sanitized version of path
         path_to_object = os.path.dirname(file_path)
         file_basename_sanitized = sanitizeNames.sanitizeName(os.path.basename(file_path))
