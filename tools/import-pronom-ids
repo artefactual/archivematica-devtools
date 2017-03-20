@@ -138,7 +138,7 @@ if __name__ == '__main__':
         '--output-format',
         choices=[SQL_OUTPUT, MIGRATIONS_OUTPUT],
         help='What format to output the updates as',
-        default=SQL_OUTPUT
+        default=MIGRATIONS_OUTPUT
     )
     parser.add_argument('--output-filename', '-o', help='File to output the migration to. "stdout" outputs to standard output', default='stdout')
     args = parser.parse_args()

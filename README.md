@@ -140,6 +140,8 @@ There are three required parameters: the old JSON, the new JSON & the output loc
 
 ### import-pronom-ids
 
+*Versions*: Archivematica 1.5, 1.6
+
 import-pronom-ids takes a FIDO PRONOM XML file, and populates the locally acessible FPR with any new formats not yet present in the database.
 The PRONOM XML file can be downloaded from [FIDO's github page](https://github.com/openpreserve/fido/tree/master/fido/conf/) by looking for formats-v##.xml
 For example, https://github.com/openpreserve/fido/tree/master/fido/conf/formats-v84.xml
@@ -147,6 +149,16 @@ For example, https://github.com/openpreserve/fido/tree/master/fido/conf/formats-
 
 If the FPR admin being used has debug enabled, then this will also output the SQL statements used to insert entries into the database to stdout.
 This makes it possible to generate a new SQL dump which can be used to reimport those formats at a later point in time without running this script - for instance, to upgrade an Archivematica's FPR install without hitting the internet.
+Note that the output will only be generated once, since the new entries are being added to the database.
+
+The one required parameter is the path to the FIDO PRONOM XML file.
+
+`--output-format` will let you select `sql` or `migrations` as the output.
+For modern versions of Archivematica it should be `migrations`, which is the default.
+
+`--output-filename` is the name of the output file.
+The special case `stdout` will print to the standard output instead of a file.
+This is also the default.
 
 ### rebuild-elasticsearch-aip-index-from-files
 
