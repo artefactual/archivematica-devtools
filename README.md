@@ -6,6 +6,9 @@ These development tools are primarily used in debugging and developing Archivema
 In the past, these tools were contained in the primary Archivematica repository; they have been split out into a separate repository to make them easier to use with packaged Archivematica installations.
 While these are primarily intended for use in development, Archivematica systems administrators may find them useful in debugging Archivematica installations.
 
+You are free to copy, modify, and distribute the Archivematica devtools with attribution under the terms of the AGPL license.
+See the [LICENSE](LICENSE) file for details.
+
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
 **Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
@@ -44,10 +47,10 @@ Requirements
 * Python 2.7
 * Active Archivematica installation with an installed, accessible database
 * `graph-links`
- * graphviz (`graphviz` `libgraphviz-dev` `python-pygraphviz` `pkg-config` in Ubuntu/Debian)
- * [`pygraphviz`](https://pypi.python.org/pypi/pygraphviz)
+    * graphviz (`graphviz` `libgraphviz-dev` `python-pygraphviz` `pkg-config` in Ubuntu/Debian)
+    * [`pygraphviz`](https://pypi.python.org/pypi/pygraphviz)
 * `get-fpr-changes`
- * frozendict (`pip install frozendict`)
+    * frozendict (`pip install frozendict`)
 
 Installation
 ------------
