@@ -17,6 +17,7 @@ While these are primarily intended for use in development, Archivematica systems
 - [Installation](#installation)
 - [Tools Provided](#tools-provided)
   - [graph-links](#graph-links)
+  - [create-many-transfers](#create-many-transfers)
   - [get-fpr-changes](#get-fpr-changes)
   - [rebuild-elasticsearch-aip-index-from-files](#rebuild-elasticsearch-aip-index-from-files)
   - [rebuild-transfer-backlog](#rebuild-transfer-backlog)
@@ -117,6 +118,21 @@ Edges are labelled with the user choice or exit code that connects those nodes, 
 * Brown: Magic Links
   * Source: `MicroServiceChainLinks.pk` where taskType is 'goto magic link' (`6fe259c2-459d-4d4b-81a4-1b9daf7ee2e9`)
   * Destination: `Transfer.magicLink`. This is set by the most recent 'assign magic link' (`3590f73d-5eb0-44a0-91a6-5b2db6655889`)
+
+### create-many-transfers
+
+*Versions*: Archivematica 1.4, 1.5, 1.6
+
+Creates many transfers at once, for scalability testing and stress testing Archivematica.
+This creates the transfers directly from locally available files without involving the storage service.
+
+There is one required parameter: The path of the directory or file to make transfers from.
+
+There are three optional parameters.
+`-n` or `--num-transfers` sets the number of transfers to create, with a default of 1.
+`--start-number` sets the number to start indexing transfers from, useful if this is not the first time running this script.
+`--name` sets the name of the transfers, with a default of 'test'.
+The name will have the transfer number appended to it.
 
 ### get-fpr-changes
 
