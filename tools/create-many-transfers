@@ -18,6 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with Archivematica.  If not, see <http://www.gnu.org/licenses/>.
 
+from __future__ import print_function
 import argparse
 import errno
 import os
@@ -59,7 +60,7 @@ def make_filepath_unique(filepath, original=None, attempt=0):
 def make_transfer(path, transfer_name):
     transfer_path = os.path.join('/', 'var', 'archivematica', 'sharedDirectory', 'watchedDirectories', 'activeTransfers', 'standardTransfer', transfer_name)
     transfer_path = make_filepath_unique(transfer_path)
-    print 'Creating transfer at', transfer_path
+    print('Creating transfer at', transfer_path)
     try:
         os.mkdir(transfer_path)
         for entry in os.listdir(path):
@@ -67,7 +68,7 @@ def make_transfer(path, transfer_name):
             transfer_entry_path = os.path.join(transfer_path, entry)
             copy_anything(entry_path, transfer_entry_path)
     except OSError:
-        print 'Error copying from ' + entry_path + ' to ' + transfer_entry_path + '. (' + str(sys.exc_info()[0]) + ')'
+        print('Error copying from', entry_path, 'to', transfer_entry_path, '. (', sys.exc_info()[0], ')')
     return os.path.basename(transfer_path)
 
 
@@ -78,7 +79,7 @@ def approve_transfer(transfer_name):
     path = os.path.join('activeTransfers', 'standardTransfer', transfer_name)+'/'
     transfer = Transfer.objects.get(currentlocation__endswith=path)
     transfer_name = transfer.currentlocation.split('/')[-2]
-    print 'Approving transfer:', transfer_name
+    print('Approving transfer:', transfer_name)
     job_uuid = Job.objects.get(jobtype='Approve standard transfer', sipuuid=transfer.uuid).jobuuid
     client = MCPClient()
     client.execute(job_uuid, approve_chain_uuid, user_id)
@@ -88,7 +89,7 @@ def make_transfers(num_transfers, start_number, path, transfer_name):
     names = ['{name}_{number}'.format(name=transfer_name, number=i) for i in range(start_number, start_number+num_transfers)]
     # Start transfers, updating stored name
     names = [make_transfer(path, name) for name in names]
-    print "Waiting 15 seconds for Archivematica to process transfers..."
+    print("Waiting 15 seconds for Archivematica to process transfers...")
     time.sleep(15)
     for name in names:
         approve_transfer(name)
