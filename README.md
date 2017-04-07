@@ -67,6 +67,7 @@ Tools Provided
 * linktool: Assists in generating SQL to create new microservice chainlinks, or to access information about links in the database.
 * graph-links: Generate a graph of all microservice chainlinks in an Archivematica database.
 * create-many-transfers: Stress test an Archivematica instance by starting many transfers at once.
+* ensure-fits-characterization: Ensure that all file formats are characterized by FITs, in addition to any other characterization commands already specified.
 * extract-mets-files-from-aips: Extract METS files from all AIPs in a given path.
 * gearman-info: Lists all running Gearman workers.
 * get-fpr-changes: Generate updates from FPR dumpdata JSON files
@@ -77,6 +78,12 @@ Tools Provided
 * reindex-backlogged-transfers: Seeds the Storage Service with information about all transfers in the transfer backlog.
 * stress-test-aip-indexing: Stress test Elasticsearch AIP indexing by repeatedly indexing test data.
 * sword-diagnose: Attempt to detect any issues in AtoM/SWORD configuration when setting up DIP upload to an AtoM instance.
+
+### ensure-fits-characterization
+
+*Versions*: Archivematica 1.6
+
+ensure-fits-characterization does one thing: it creates a FITS characterization rule for all format versions that lack one. If a format version lacks characterization rules altogether, do nothing because the default FITS characterization will handle those cases.
 
 ### graph-links
 
