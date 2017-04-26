@@ -1,0 +1,233 @@
+#!/usr/bin/env python2
+# -*- coding: utf-8 -*-
+
+import ast
+import argparse
+import getpass
+import logging
+import json
+import os
+import sys
+
+# I hate doing this!
+os.environ['DJANGO_SETTINGS_MODULE'] = 'settings.common'
+sys.path.append('/usr/share/archivematica/dashboard')
+if getpass.getuser() != 'archivematica': sys.exit('Run as archivematica, please!')
+
+import django; django.setup()
+import requests
+
+from main.models import WatchedDirectory
+from main.models import MicroServiceChain
+from main.models import MicroServiceChainLink
+from main.models import MicroServiceChainChoice
+from main.models import MicroServiceChainLinkExitCode
+from main.models import MicroServiceChoiceReplacementDic
+from main.models import StandardTaskConfig
+from main.models import TaskConfigUnitVariableLinkPull
+from main.models import TaskConfigSetUnitVariable
+
+
+"""
+
+Some discrepancies found:
+
+    - Links d4ff46d4-5c57-408c-943b-fed63c1a9d75 and
+      69f4a4b9-93e2-481c-99a0-fa92d68c3ebd don't seem to be referenced by
+      neither a watch directory or a choice.
+
+    - Other links have not their corresponding TaskConfig row. They are
+      included in the final data set with an extra attribute
+      "missing_taskconfig".
+
+    - Some MicroServiceChainLink are ignored because their types seem to be
+      deprecated: "Assign magic link" and "Goto magic link". See TASK_TYPES.
+
+"""
+
+
+# Undo Archivematica's logging settings
+root = logging.getLogger()
+map(root.removeHandler, root.handlers[:])
+map(root.removeFilter, root.filters[:])
+
+# Set up local logger
+logging.basicConfig(stream=sys.stdout, format='[%(asctime)s] [%(levelname)8s] - %(message)s (%(filename)s:%(lineno)s)')
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.WARNING)
+
+# This dict was extracted from the TaskTypes table, attributes: model, deprecated, description
+TASK_TYPES = {
+    '01b748fe-2e9d-44e4-ae5d-113f74c9a0ba': (StandardTaskConfig, False, 'Get user choice from microservice generated list'),
+    '36b2e239-4a57-4aa5-8ebc-7a29139baca6': (StandardTaskConfig, False, 'One instance'),
+    'a19bfd9f-9989-4648-9351-013a10b382ed': (StandardTaskConfig, False, 'Get microservice generated list in stdout'),
+    'a6b1c323-7d36-428e-846a-e7e819423577': (StandardTaskConfig, False, 'For each file'),
+    '61fb3874-8ef6-49d3-8a2d-3cb66e86a30c': (MicroServiceChainChoice, False, 'Get user choice to proceed with'),
+    '6f0b612c-867f-4dfd-8e43-5b35b7f882d7': (TaskConfigSetUnitVariable, False, 'linkTaskManagerSetUnitVariable'),
+    '9c84b047-9a6d-463f-9836-eafa49743b84': (MicroServiceChoiceReplacementDic, False, 'Get replacement dic from user choice'),
+    'c42184a3-1a7f-4c4d-b380-15d8d97fdd11': (TaskConfigUnitVariableLinkPull, False, 'linkTaskManagerUnitVariableLinkPull'),
+    '3590f73d-5eb0-44a0-91a6-5b2db6655889': (None, True, 'Assign magic link'),
+    '6fe259c2-459d-4d4b-81a4-1b9daf7ee2e9': (None, True, 'Goto magic link'),
+}
+
+
+def process_chain_link_task_details(task_dict, task, task_config):
+    """
+    Add more details to a specific task based on its type, e.g.
+    StandardTaskConfig, MicroServiceChainChoice, etc...
+
+    Regarding to MicroServiceChainChoice, choices are now pointed to its
+    corresponding task instead of using the old MicroServiceChain rows.
+
+    :task_dict is the dictionary that needs to be updated by this function
+    :task is the corresponding MicroServiceChainLink
+    :task_config is the corresponding TaskConfig
+    """
+    try:
+        ttype = TASK_TYPES[task_config.tasktype_id]
+    except KeyError:
+        raise ValueError('Unknown task type: %s', task_config.tasktype_id)
+    else:
+        model, deprecated, description = ttype
+    if deprecated:
+        logger.error('MicroServiceChainLink with deprecated TaskType is being ignored: %s (%s)', task.id, description)
+        return
+    if not model:
+        logger.error('Foreign model not found')
+        return
+
+    task_dict['description'] = task_config.description
+
+    model_config = {'name': model.__name__}
+    task_dict['config'] = model_config
+
+    if model == StandardTaskConfig:
+        try:
+            stdtask_config = StandardTaskConfig.objects.get(id=task_config.tasktypepkreference)
+        except StandardTaskConfig.DoesNotExist:
+            logger.warning('Missing StandardTaskConfig (tasktypepkreference=%s)', task_config.tasktypepkreference)
+        else:
+            model_config['type'] = ttype[2]
+            model_config['execute'] = stdtask_config.execute
+            model_config['arguments'] = stdtask_config.arguments
+            model_config['filter_subdir'] = stdtask_config.filter_subdir
+            model_config['filter_file_start'] = stdtask_config.filter_file_start
+            model_config['filter_file_end'] = stdtask_config.filter_file_end
+            model_config['stdout_file'] = stdtask_config.stdout_file
+            model_config['stderr_file'] = stdtask_config.stderr_file
+            model_config['requires_output_lock'] = stdtask_config.requires_output_lock
+
+    elif model == MicroServiceChainChoice:
+        choices = MicroServiceChainChoice.objects.filter(choiceavailableatlink_id=task.id)
+        if not choices.count():
+            logger.warning('Zero choices for MicroServiceChoiceReplacementDic.choiceavailableatlink_id=%s', task.id)
+        model_config['choices'] = list()
+        for item in choices:
+            chain = item.chainavailable
+            model_config['choices'].append({
+                'description': chain.description,
+                'task_uuid': chain.id,
+            })
+
+    elif model == TaskConfigSetUnitVariable:
+        try:
+            unit_var = TaskConfigSetUnitVariable.objects.get(id=task_config.tasktypepkreference)
+        except TaskConfigSetUnitVariable.DoesNotExist:
+            logger.warning('Missing TaskConfigSetUnitVariable (tasktypepkreference=%s)', task_config.tasktypepkreference)
+        else:
+            model_config['variable'] = unit_var.variable
+            model_config['variable_value'] = unit_var.variablevalue
+            model_config['task_uuid'] = unit_var.microservicechainlink_id
+
+    elif model == MicroServiceChoiceReplacementDic:
+        replacement_dicts = MicroServiceChoiceReplacementDic.objects.filter(choiceavailableatlink_id=task.id)
+        if not replacement_dicts.count():
+            logger.warning('Zero replacement_dicts for MicroServiceChoiceReplacementDic.choiceavailableatlink=%s', task.id)
+        model_config['replacements'] = list()
+        for item in replacement_dicts:
+            model_config['replacements'].append({
+                'description': item.description,
+                'items': ast.literal_eval(item.replacementdic),
+            })
+
+    elif model == TaskConfigUnitVariableLinkPull:
+        try:
+            unit_var = TaskConfigUnitVariableLinkPull.objects.get(id=task_config.tasktypepkreference)
+        except TaskConfigUnitVariableLinkPull.DoesNotExist:
+            logger.warning('Missing TaskConfigUnitVariableLinkPull (tasktypepkreference=%s)', task_config.tasktypepkreference)
+        else:
+            model_config['variable'] = unit_var.variable
+            model_config['variable_value'] = unit_var.variablevalue
+            model_config['default_task_uuid'] = unit_var.defaultmicroservicechainlink_id
+
+
+def main(json_file):
+    export = dict(watched_directories=[], tasks={})
+
+    # Tasks
+    for item in MicroServiceChainLink.objects.all():
+        logger.info('Adding task: %s (%s)', item.id, item.microservicegroup)
+        task = {
+            'group': item.microservicegroup,
+            'fallback': {
+                'exit_message': item.defaultexitmessage,
+                'task_uuid': item.defaultnextchainlink_id, # Normally 7d728c39-395f-4892-8193-92f086c0546f (e-mail fail report)
+            }
+        }
+
+        try:
+            task_config = item.currenttask
+        except django.core.exceptions.ObjectDoesNotExist:
+            logger.warning('Found orphan task (MicroServiceChainLink.pk=%s), currenttask foreign key cannot be found', item.id)
+            task['missing_taskconfig'] = True
+        else:
+            process_chain_link_task_details(task, item, task_config)
+
+        exit_code_links = MicroServiceChainLinkExitCode.objects.filter(microservicechainlink_id=item.id)
+        if exit_code_links.count():
+            task['exit_codes'] = list()
+            for ec_item in exit_code_links:
+                task['exit_codes'].append({
+                    'code': ec_item.exitcode,
+                    'message': ec_item.exitmessage,
+                    'task_uuid': ec_item.nextmicroservicechainlink_id,
+                })
+
+        export['tasks'][item.id] = task
+
+    # Watched directories
+    for item in WatchedDirectory.objects.all():
+        logger.info('Adding watched directory: %s', item.watched_directory_path)
+        wdir = {
+            'path': item.watched_directory_path,
+            'unit_type': item.expected_type.description,
+            'task_uuid': item.chain.startinglink_id,
+            'only_dirs': item.only_act_on_directories
+        }
+        export['watched_directories'].append(wdir)
+
+
+    json_file = os.path.normpath(json_file)
+
+    try:
+        with open(json_file, 'w') as f:
+            json.dump(export, f, sort_keys=True, separators=(', ',': '), indent=4)
+    except IOError:
+        logger.exception('Error writing to %s', json_file)
+        return 1
+
+    return 0
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('file', help='Write Archivematica workflows to a file encoded in JSON.')
+    parser.add_argument('-v', '--verbose', action='count')
+    args = parser.parse_args()
+
+    if args.verbose == 1:
+        logger.setLevel(logging.INFO)
+    elif args.verbose > 1:
+        logger.setLevel(logging.DEBUG)
+
+    sys.exit(main(args.file))
