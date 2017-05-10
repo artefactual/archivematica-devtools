@@ -120,6 +120,9 @@ def main(pronom_xml, output_format=SQL_OUTPUT, output_file=sys.stdout):
             try:
                 rule = IDRule.objects.get(command_output=new_format.extension)
                 rule.delete()
+                sql = connection.queries[-1]['sql']
+                migration = '''    IDRule.objects.filter(command_output="{}").delete()'''.format(new_format.extension)
+                choose_output(output_format, output_file, sql, migration)
             except IDRule.DoesNotExist:
                 rule = IDRule(
                     format=format_version,
@@ -149,9 +152,10 @@ if __name__ == '__main__':
     if args.output_filename != 'stdout':
         output_file = open(args.output_filename, 'w')
 
-    rc = main(args.pronom_xml, args.output_format, output_file)
-
-    if output_file != sys.stdout:
-        output_file.close()
+    try:
+        rc = main(args.pronom_xml, args.output_format, output_file)
+    finally:
+        if output_file != sys.stdout:
+            output_file.close()
 
     sys.exit(rc)
