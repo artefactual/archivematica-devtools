@@ -24,6 +24,7 @@ import logging
 import argparse
 import ConfigParser
 import MySQLdb
+import getpass
 
 import pygraphviz as pgv
 from lxml import etree
@@ -103,9 +104,17 @@ TASK_TYPES = {
 
 }
 
-def queryAllSQL(sql, arguments=None):
+def queryAllSQL(sql, mysql_password, arguments=None):
     """ Ported and simplified from the now-deleted databaseInterface. """
-    database = MySQLdb.connect(read_default_file="/etc/archivematica/archivematicaCommon/dbsettings", charset="utf8", use_unicode = True, db='MCP')
+    # database = MySQLdb.connect(read_default_file="/etc/archivematica/archivematicaCommon/dbsettings", charset="utf8", use_unicode = True, db='MCP')
+    database = MySQLdb.connect(
+        read_default_file="/etc/archivematica/archivematicaCommon/dbsettings",
+        charset="utf8",
+        use_unicode=True,
+        host="localhost",
+        user="archivematica",
+        passwd=mysql_password,
+        db='MCP')
     database.autocommit(True)
 
     if isinstance(sql, unicode):
@@ -419,6 +428,7 @@ def get_script_name(name):
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
+    parser.add_argument('-p', '--mysql-password')
     parser.add_argument('-f', '--format', choices=['png', 'svg'], default='svg')
     parser.add_argument('-v', '--verbose', action='count')
     args = parser.parse_args()
@@ -437,7 +447,7 @@ def add_edge(G, sourceUUID, destUUID, color='black', label=None):
         G.add_edge(linkUUIDtoNodeName[sourceUUID], linkUUIDtoNodeName[destUUID], color=color)
 
 
-def load_chain_links(G):
+def load_chain_links(G, mysql_password):
     """
     Map all the existing job chain links to nodes in the graph.
     Default links are represented with black arrows.
@@ -454,7 +464,7 @@ def load_chain_links(G):
         JOIN TasksConfigs ON currentTask = TasksConfigs.pk
         JOIN TaskTypes ON taskType = TaskTypes.pk;
     """
-    links = queryAllSQL(sql)
+    links = queryAllSQL(sql, mysql_password)
     for link in links:
         pk, defaultNextChainLink, description, taskType, pkRef, group = link
         if pk in excludedNodes:
@@ -466,7 +476,7 @@ def load_chain_links(G):
             FROM StandardTasksConfigs
             WHERE pk=%s;
         """
-        script_name = queryAllSQL(sql, (pkRef,))
+        script_name = queryAllSQL(sql, mysql_password, (pkRef,))
         arguments = None
         if script_name:
             script_name, arguments = script_name[0]
@@ -479,7 +489,7 @@ def load_chain_links(G):
                 FROM TasksConfigsSetUnitVariable
                 WHERE pk=%s;
             """
-            returned = queryAllSQL(sql, (pkRef,))
+            returned = queryAllSQL(sql, mysql_password, (pkRef,))
             if returned:
                 script_name = '%s, %s' % (returned[0][0], returned[0][1] or returned[0][2])
         # Node info:
@@ -494,7 +504,7 @@ def load_chain_links(G):
             FROM MicroServiceChains
             WHERE startingLink=%s;
         """
-        if queryAllSQL(sql, (pk,)):
+        if queryAllSQL(sql, mysql_password, (pk,)):
             border_color = COLORS['node_chain_link_start']
         full_script_name = get_script_name(script_name)
         tooltip = 'Script name: {}. \n'.format(full_script_name) if full_script_name else 'Full script name not found. '
@@ -509,7 +519,7 @@ def load_chain_links(G):
     return
 
 
-def bridgeExitCodes(G):
+def bridgeExitCodes(G, mysql_password):
     """
     Connect tasks based on the exit code. The edges are red if the exit code is
     greater than zero and green otherwise. The exit code is included in the
@@ -523,7 +533,7 @@ def bridgeExitCodes(G):
         FROM MicroServiceChainLinksExitCodes;
     """
     logger.info('Processing exit codes...')
-    rows = queryAllSQL(sql)
+    rows = queryAllSQL(sql, mysql_password)
     for row in rows:
         microServiceChainLink, nextMicroServiceChainLink, exit_code = row
         if nextMicroServiceChainLink:
@@ -531,7 +541,7 @@ def bridgeExitCodes(G):
             add_edge(G, microServiceChainLink, nextMicroServiceChainLink, label='EXITCODE={}'.format(exit_code), color=color)
 
 
-def bridgeUserSelections(G):
+def bridgeUserSelections(G, mysql_password):
     """
     Connect tasks that prompt the user with its corresponding choices. The
     arrows are green and labeled with the choice description.
@@ -545,14 +555,14 @@ def bridgeUserSelections(G):
         FROM MicroServiceChainChoice
         JOIN MicroServiceChains ON (MicroServiceChainChoice.chainAvailable = MicroServiceChains.pk);
     """
-    rows = queryAllSQL(sql)
+    rows = queryAllSQL(sql, mysql_password)
     for row in rows:
         choiceAvailableAtLink, startingLink, description = row
         if choiceAvailableAtLink and startingLink:
             add_edge(G, choiceAvailableAtLink, startingLink, color=COLORS['edge_user_selections'], label=description)
 
 
-def bridgeWatchedDirectories(G):
+def bridgeWatchedDirectories(G, mysql_password):
     """
     Connect tasks that represent the end of a chain that moves a package to the
     watched directory of the new chain. The arrors are yellow.
@@ -585,7 +595,7 @@ def bridgeWatchedDirectories(G):
         FROM WatchedDirectories
         JOIN MicroServiceChains ON (WatchedDirectories.chain = MicroServiceChains.pk);
     """
-    rows = queryAllSQL(sql)
+    rows = queryAllSQL(sql, mysql_password)
     for row in rows:
         watchedDirectoryPath, startingLink = row
         logger.debug("\nWatched directory [%s] [startingLink=%s]",
@@ -606,7 +616,7 @@ def bridgeWatchedDirectories(G):
                 AND taskType = %s
                 AND (arguments LIKE %s OR arguments LIKE %s);
         """
-        rows2 = queryAllSQL(sql, (
+        rows2 = queryAllSQL(sql, mysql_password, (
             TASK_TYPES['one_instance'],
             '%{}%'.format(watchedDirectoryPath.replace('%', '\%')),
             '%{}%'.format(watchedDirectoryPath.replace('%watchDirectoryPath%', '%sharedPath%watchedDirectories/', 1).replace('%', '\%')),
@@ -621,7 +631,7 @@ def bridgeWatchedDirectories(G):
             logger.info("No sources for watched directory: %s", watchedDirectoryPath)
 
 
-def bridgeMagicChainLinks(G):
+def bridgeMagicChainLinks(G, mysql_password):
     # find the assignments
     sql = """
         SELECT
@@ -632,18 +642,18 @@ def bridgeMagicChainLinks(G):
         JOIN TasksConfigsAssignMagicLink ON (TasksConfigsAssignMagicLink.pk = TasksConfigs.taskTypePKReference)
         WHERE TasksConfigs.taskType = %s;
     """
-    rows = queryAllSQL(sql, (TASK_TYPES['assign_magic_link'],))
+    rows = queryAllSQL(sql, mysql_password, (TASK_TYPES['assign_magic_link'],))
     for row in rows:
         microServiceChainLink, magicLink = row
         node = G.get_node(linkUUIDtoNodeName[microServiceChainLink])
         # Keep a list of visited nodes to avoid infinite recursion
         visitedNodes = {node: None}
-        count = bridgeMagicChainLinksRecursiveAssist(G, node, magicLink, visitedNodes)
+        count = bridgeMagicChainLinksRecursiveAssist(G, mysql_password, node, magicLink, visitedNodes)
         if count == 0:
             logger.info("No loads of set link: %s", node)
 
 
-def bridgeMagicChainLinksRecursiveAssist(G, node, magicLink, visitedNodes):
+def bridgeMagicChainLinksRecursiveAssist(G, mysql_password, node, magicLink, visitedNodes):
     ret = 0
     link = node[1:node.find('}')]
     sql = """
@@ -654,7 +664,7 @@ def bridgeMagicChainLinksRecursiveAssist(G, node, magicLink, visitedNodes):
             TasksConfigs.taskType = %s
             AND MicroServiceChainLinks.pk = %s;
     """
-    rows = queryAllSQL(sql, (
+    rows = queryAllSQL(sql, mysql_password, (
         TASK_TYPES['assign_magic_link'],
         link,
     ))
@@ -667,11 +677,11 @@ def bridgeMagicChainLinksRecursiveAssist(G, node, magicLink, visitedNodes):
             if neigh in visitedNodes:
                 continue
             visitedNodes[neigh] = None
-            ret += bridgeMagicChainLinksRecursiveAssist(G, neigh, magicLink, visitedNodes)
+            ret += bridgeMagicChainLinksRecursiveAssist(G, mysql_password, neigh, magicLink, visitedNodes)
     return ret
 
 
-def bridgeLoadVariable(G):
+def bridgeLoadVariable(G, mysql_password):
     sql = """
         SELECT
             MicroServiceChainLinks.pk,
@@ -682,7 +692,7 @@ def bridgeLoadVariable(G):
         JOIN TasksConfigsUnitVariableLinkPull ON (TasksConfigsUnitVariableLinkPull.pk = TasksConfigs.taskTypePKReference)
         WHERE TasksConfigs.taskType = %s;
     """
-    rows = queryAllSQL(sql, (TASK_TYPES['unit_var_pull'],))
+    rows = queryAllSQL(sql, mysql_password, (TASK_TYPES['unit_var_pull'],))
     for row in rows:
         count = 0
         microServiceChainLink, variable, defaultMicroServiceChainLink = row
@@ -698,7 +708,7 @@ def bridgeLoadVariable(G):
                 TasksConfigs.taskType = %s
                 AND TasksConfigsSetUnitVariable.variable = %s;
         """
-        rows2 = queryAllSQL(sql, (
+        rows2 = queryAllSQL(sql, mysql_password, (
             TASK_TYPES['unit_var'],
             variable,
         ))
@@ -740,18 +750,19 @@ def main():
         logger.setLevel(logging.INFO)
     elif args.verbose > 1:
         logger.setLevel(logging.DEBUG)
+    mysql_password = args.mysql_password
 
     G = pgv.AGraph(strict=True, directed=True)
 
     # Nodes
-    load_chain_links(G)
+    load_chain_links(G, mysql_password)
 
     # Edges
-    bridgeExitCodes(G)
-    bridgeUserSelections(G)
-    bridgeWatchedDirectories(G)
-    bridgeLoadVariable(G)
-    bridgeMagicChainLinks(G)
+    bridgeExitCodes(G, mysql_password)
+    bridgeUserSelections(G, mysql_password)
+    bridgeWatchedDirectories(G, mysql_password)
+    bridgeLoadVariable(G, mysql_password)
+    bridgeMagicChainLinks(G, mysql_password)
 
     # HACK? Represent the connection of the transfer and the ingest chains.
     #
@@ -761,11 +772,11 @@ def main():
     #
     #         [↓] (black)
     #
-    #     > {db6d3830-9eb4-4996-8f3a-18f4f998e07f} Set file permissions
+    #     > {70669a5b-01e4-4ea0-ac70-10292f87da05} Set file permissions
     #     > (one instance) 6157fe87-26ff-49da-9899-d9036b21c4b0
     #     > [setDirectoryPermissionsForAppraisal_v0.0] Verify SIP compliance
     #
-    add_edge(G, '3e75f0fa-2a2b-4813-ba1a-b16b4be4cac5', 'db6d3830-9eb4-4996-8f3a-18f4f998e07f', label='Transfer -> Ingest (manual)')
+    add_edge(G, '3e75f0fa-2a2b-4813-ba1a-b16b4be4cac5', '70669a5b-01e4-4ea0-ac70-10292f87da05', label='Transfer -> Ingest (manual)')
 
     G.layout(prog='dot')
 
@@ -789,4 +800,9 @@ def main():
 
 
 if __name__ == '__main__':
+    # try:
+    #     mysql_password = sys.argv[1]
+    # except IndexError:
+    #     print('MySQL password must be supplied as sole argument.')
+    #     sys.exit(1)
     sys.exit(main())
