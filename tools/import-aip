@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+
+# This file is part of the Archivematica development tools.
+#
+# Copyright 2010-2017 Artefactual Systems Inc. <http://artefactual.com>
+#
+# Archivematica is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Archivematica is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Archivematica.  If not, see <http://www.gnu.org/licenses/>.
+
+#shell script to import_aip
+#defaults
+AIPSTORE="/var/archivematica/sharedDirectory/www/AIPsStore/"
+#look for user supplied parameters
+{
+    [ $# -gt 0 ] && AIPPATH=$1
+}
+{
+    [ $# -gt 1 ] && AIPSTORE=$2
+}
+
+case $AIPPATH in
+'help')
+    echo "am import-aip: add an externally generated AIP to an Archivematica instance"
+    echo "Usage: am import-aip <aip_path> <aip_store_path>"
+    echo "    aip_path must be absolute path to the AIP to ingest'"
+    echo "    aip_store_path is optional, can be used to set path to AIP Storage Location'"
+    echo "Note: this tools only supports uncompressed AIP's on a local filesystem" 
+    exit 1
+;;
+'')
+    echo "must supply an AIP path"
+    exit 1
+;;
+'*')
+    echo "Importing $AIPPATH to Storage Service"
+;;
+esac
+
+#get directory size
+SIZE=$(du -sb $AIPPATH | cut -f1)
+
+AIPUUID=$(/usr/share/python/archivematica-storage-service/bin/python /usr/local/libexec/archivematica/add-aip-to-ss --aip-size=$SIZE --aip-store=$AIPSTORE $AIPPATH)
+
+case $AIPUUID in
+'1')
+    echo "Failed bag validation"
+    exit 1
+;;
+'2')
+    echo "Failed to import into storage service"
+    exit 2
+;;
+'3')
+    echo "Failed to copy to AIP Storage Location"
+    exit 3
+;;
+'4')
+    echo "Failed to read AIP - doesn't exist or permissions problem?" 
+    exit 4
+;;
+'5')
+    echo "Can't read METS file"
+    exit 5
+;;
+'')
+    echo "Something went wrong"
+    exit 6
+;;
+*)
+    echo "Indexing $AIPUUID"
+
+    export PYTHONPATH=$PYTHONPATH:/usr/share/archivematica/dashboard/:/usr/lib/archivematica/archivematicaCommon/
+    export DJANGO_SETTINGS_MODULE=settings.common
+    export ARCHIVEMATICA_DASHBOARD_DASHBOARD_DJANGO_ALLOWED_HOSTS=*
+    export ARCHIVEMATICA_DASHBOARD_DASHBOARD_DJANGO_SECRET_KEY=CHANGE_ME_WITH_A_SECRET_KEY
+
+    # need aip storage location from storage service?
+    /usr/local/bin/am rebuild-elasticsearch-aip-index-from-files -u $AIPUUID $AIPSTORE
+
+    echo "Completed successfully" 
+;;
+esac
+
+echo "done"
