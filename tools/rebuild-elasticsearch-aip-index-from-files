@@ -197,7 +197,7 @@ def main():
 
     # Verify ES is accessible
     try:
-        elasticSearchFunctions.setup_reading_from_client_conf()
+        elasticSearchFunctions.setup(hosts='localhost')
         es_client = elasticSearchFunctions.get_client()
     except AttributeError:
         es_client = elasticSearchFunctions.Elasticsearch(hosts=elasticSearchFunctions.getElasticsearchServerHostAndPort())  # AM 1.5
