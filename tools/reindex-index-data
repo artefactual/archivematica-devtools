@@ -54,7 +54,7 @@ def reindex(index, doc_types, chunk_size):
     try:  # Shim to handle elasticSearchFunctions cleanup
         conn = Elasticsearch(hosts=elasticSearchFunctions.getElasticsearchServerHostAndPort())
     except AttributeError:
-        elasticSearchFunctions.setup_reading_from_client_conf()
+        elasticSearchFunctions.setup(hosts='localhost')
         conn = elasticSearchFunctions.get_client()
 
     try:
