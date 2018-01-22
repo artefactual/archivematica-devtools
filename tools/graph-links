@@ -19,6 +19,7 @@
 # along with Archivematica.  If not, see <http://www.gnu.org/licenses/>.
 
 import datetime
+import os
 import sys
 import logging
 import argparse
@@ -28,6 +29,12 @@ import getpass
 
 import pygraphviz as pgv
 from lxml import etree
+
+
+MYSQL_CONFIG_FILE_DFLT = '/etc/archivematica/archivematicaCommon/dbsettings'
+MYSQL_HOST_DFLT = 'localhost'
+MYSQL_USER_DFLT = 'archivematica'
+MYSQL_PORT_DFLT = 3306
 
 
 linkUUIDtoNodeName = {}
@@ -104,15 +111,23 @@ TASK_TYPES = {
 
 }
 
+
+
 def queryAllSQL(sql, mysql_password, arguments=None):
     """ Ported and simplified from the now-deleted databaseInterface. """
-    # database = MySQLdb.connect(read_default_file="/etc/archivematica/archivematicaCommon/dbsettings", charset="utf8", use_unicode = True, db='MCP')
+    mysql_config_file = os.getenv('MYSQL_CONFIG_FILE_DFLT')
+    if mysql_config_file is None:
+        mysql_config_file = MYSQL_CONFIG_FILE_DFLT
+    mysql_host = os.getenv('MYSQL_HOST', MYSQL_HOST_DFLT)
+    mysql_user = os.getenv('MYSQL_USER', MYSQL_USER_DFLT)
+    mysql_port = int(os.getenv('MYSQL_PORT', MYSQL_PORT_DFLT))
     database = MySQLdb.connect(
-        read_default_file="/etc/archivematica/archivematicaCommon/dbsettings",
+        read_default_file=mysql_config_file,
         charset="utf8",
         use_unicode=True,
-        host="localhost",
-        user="archivematica",
+        host=mysql_host,
+        port=mysql_port,
+        user=mysql_user,
         passwd=mysql_password,
         db='MCP')
     database.autocommit(True)
@@ -800,9 +815,11 @@ def main():
 
 
 if __name__ == '__main__':
-    # try:
-    #     mysql_password = sys.argv[1]
-    # except IndexError:
-    #     print('MySQL password must be supplied as sole argument.')
-    #     sys.exit(1)
+    # Example remote usage::
+    #
+    #     $ export MYSQL_CONFIG_FILE=0
+    #     $ export MYSQL_HOST="127.0.0.1"
+    #     $ export MYSQL_USER="root"
+    #     $ export MYSQL_PORT=62001
+    #     $ python tools/graph-links --mysql-password=12345
     sys.exit(main())
