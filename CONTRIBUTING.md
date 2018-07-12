@@ -21,17 +21,19 @@ There are many ways to contribute: writing tutorials or blog posts about your ex
 
 ## Submitting bugs
 
-If you find a security vulnerability, do NOT open an issue.
-Email info@artefactual.com instead.
+If you find a security vulnerability, do NOT open an issue. Email
+info@artefactual.com instead.
 
-Artefactual staff use the [issue tracker](https://projects.artefactual.com/projects/archivematica) for any work they do on the Archivematica project.
-Anyone is welcome to request an account on that system to file issues there.
-To register for an account, please email info@artefactual.com.
-Please note that it may take up to two business days for your new account request to be approved.
+Issues can be filed using GitHub Issues in the
+[Archivematica Issues repo](https://github.com/archivematica/Issues). It is
+recommended to file issues there rather than in any of the Archivematica-related
+code repositories. Artefactual staff also use GitHub issues for any work they do
+on the Archivematica project.
 
-Issues can also be filed using GitHub Issues in the Archivematica project or any of the supporting GitHub repositories in the Artefactual organization.
-You can also post in our [technical](https://groups.google.com/forum/#!forum/archivematica-tech) or [user](https://groups.google.com/forum/#!forum/archivematica) mailing lists.
-A post to the mailing list is always welcome, especially if you're unsure if it's a bug or a local problem!
+You can also post in our
+[user](https://groups.google.com/forum/#!forum/archivematica) mailing list.
+A post to the mailing list is always welcome, especially if you're unsure if
+it's a bug or a local problem!
 
 Useful questions to answer if you're having problems include:
 
@@ -42,6 +44,8 @@ Useful questions to answer if you're having problems include:
 * What did you expect to happen?
 * What did you see instead?
 * Can you reproduce this reliably?
+* If a specific Job is failing, what output did it produce? This is available
+  by clicking on the gear icon.
 
 ## Contribution standards
 
@@ -73,4 +77,3 @@ Alternatively, you may send an original signed agreement to:
     201 - 301 Sixth Street
     New Westminster BC  V3L 3A7
     Canada
-
