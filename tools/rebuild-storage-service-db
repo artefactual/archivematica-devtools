@@ -1,0 +1,98 @@
+#!/usr/bin/env python2
+
+from __future__ import print_function
+
+import argparse
+import json
+import os
+import re
+import requests
+import sys
+
+
+def main(path, ss_url, space, location, pipeline):
+    api_version = '2'
+
+    # Check if Space exists
+    url = 'http://{}/api/v{}/space/{}/'.format(ss_url, api_version, space)
+    response = requests.get(url, verify=False)
+    if response.status_code == 404:
+        # Create new local space
+        print('TODO create local space')
+        return 2
+    elif response.status_code == 200:
+        print('Space', space, 'exists')
+        space_info = response.json()
+
+    # Check if Location exist
+    url = 'http://{}/api/v{}/location/{}/'.format(ss_url, api_version, location)
+    response = requests.get(url, verify=False)
+    if response.status_code == 404:
+        # Create new location
+        print('TODO create location within', space)
+        return 2
+    elif response.status_code == 200:
+        # Check if Location is AS
+        location_info = response.json()
+        print('Location', location, 'exists')
+        if location_info.get('purpose') != 'AS':
+            print(location, 'is not an AIP storage location. Exiting', file=sys.stderr)
+            return 1
+        location_info = response.json()
+
+    # Check if Pipeline exists
+    url = 'http://{}/api/v{}/pipeline/{}/'.format(ss_url, api_version, pipeline)
+    response = requests.get(url, verify=False)
+    if response.status_code == 404:
+        # Create new local pipeline
+        print('TODO create local pipeline')
+        return 2
+    elif response.status_code == 200:
+        print('Pipeline', pipeline, 'exists')
+        pipeline_info = response.json()
+
+    # Walk directory
+    print('Searching', path, 'for AIPS...')
+    aip_name_regex = r'^(?P<name>\w*)-(?P<uuid>\w{8}-\w{4}-4\w{3}-\w{4}-\w{12}).(?P<extension>7z|tar.bz2)$'
+    for dirname, dirs, files in os.walk(path):
+        for f in files:
+            # Try to find AIPs by the structure of the name (name-uuid.7z/tar.bz2)
+            match = re.search(aip_name_regex, f)
+            if match:
+                print(f, 'looks like AIP')
+                abs_path = os.path.join(dirname, f)
+                loc_path = os.path.join(location_info['path'], '')
+                # POST to SS with info
+                headers = {
+                    'content-type': 'application/json'
+                }
+                payload = {
+                    'current_location': location_info['resource_uri'],
+                    'current_path': abs_path.replace(loc_path, '', 1),
+                    'description': match.group('name'),
+                    'origin_pipeline': pipeline_info['resource_uri'],
+                    'package_type': 'AIP',
+                    'size': str(os.path.getsize(abs_path)),
+                    'status': 'UPLOADED',
+                    'uuid': match.group('uuid'),
+                }
+                print('payload', payload)
+                url = 'http://{}/api/v{}/file/'.format(ss_url, api_version)
+                print('url', url)
+                response = requests.post(url, verify=False, data=json.dumps(payload), headers=headers)
+                print('response', response)
+                print(response.text)
+        # Search dirs for UC AIPs
+
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Rebuild SS DB of AIPs.')
+    parser.add_argument('--url', '-u', dest='url', default='localhost:8000', help='Storage service URL to update')
+    parser.add_argument('--space', '-s', dest='space', help='UUID of the Space to put the AIPs in. If omitted, a local Space at / will be created.')
+    parser.add_argument('--location', '-l', dest='location', help='UUID of the Location to put the AIPs in. Should be AIP storage and within the --space (if provided). If omitted, a location at the provided path will be created.')
+    parser.add_argument('--pipeline', '-p', dest='pipeline', help='UUID of the Pipeline these AIPs originated from. If omitted, an import pipeline will be created.')
+    # parser.add_argument('--parse-type', dest='type', choices=('aips', 'pointerfiles'), help='Set whether to parse directory for AIPs or pointer files.')
+    parser.add_argument('path', help='Absolute path to the directory to rebuild from.')
+    args = parser.parse_args()
+    sys.exit(main(args.path, args.url, args.space, args.location, args.pipeline))
