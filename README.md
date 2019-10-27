@@ -79,6 +79,7 @@ Tools Provided
 * reindex-backlogged-transfers: Seeds the Storage Service with information about all transfers in the transfer backlog.
 * stress-test-aip-indexing: Stress test Elasticsearch AIP indexing by repeatedly indexing test data.
 * sword-diagnose: Attempt to detect any issues in AtoM/SWORD configuration when setting up DIP upload to an AtoM instance.
+* add-fpr-tool: Generate the SQL needed to create FPR tools, rules, commands, etc. See the [add-fpr-tool MediaConch example doc](doc/add-fpr-rule-example.rst).
 
 ### graph-links
 
@@ -204,3 +205,10 @@ This is useful if the mapping has changed in an incompatible way but the existin
 Depending on the size of the index, a large amount of memory may be consumed.
 
 There is one positional argument which specifies which index to recreate: `transfers` or `aips`. Additionally, the optional parameter `--chunk-size` allows the user to decide how many documents are sent to Elasticsearch in one chunk. This can help to circumvent timeout issues when the documents are very big.
+
+### add-fpr-tool
+
+For an example of how to use the `add-fpr-tool` to create a new FPR tool,
+command and rule, see the
+[add-fpr-tool MediaConch example doc](doc/add-fpr-rule-example.rst).
+
