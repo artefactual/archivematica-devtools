@@ -1,0 +1,87 @@
+#!/usr/bin/env python2
+# -*- coding: utf-8 -*-
+
+# This file is part of the Archivematica development tools.
+#
+# Copyright 2010-2016 Artefactual Systems Inc. <http://artefactual.com>
+#
+# Archivematica is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Archivematica is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Archivematica.  If not, see <http://www.gnu.org/licenses/>.
+
+"""This tool does one thing: it creates a FITS characterization rule for all
+format versions that lack one. If a format version lacks characterization rules
+altogether, do nothing because the default FITS characterization will handle
+those cases.
+"""
+
+from __future__ import print_function
+import os
+import sys
+
+sys.path.append('/usr/share/archivematica/dashboard')
+os.environ["DJANGO_SETTINGS_MODULE"] = "settings.local"
+
+import django
+django.setup()
+from fpr.models import (
+    FormatVersion,
+    FPCommand,
+    FPRule,
+)
+
+
+def create_fits_rules():
+    """Find all ``FormatVersion`` instances that have no FITS characterization
+    rules but do have at least one other characterization rule. (Those with no
+    characterization rules whatsoever are presumed to be taken care of because
+    FITS will be the default characterization rule for these formats.) For all
+    those formats, create a FITS characterization rule.
+    """
+    no_charact_rules = []
+    no_fits_rule = []
+    fits_cmd = FPCommand.objects.filter(
+        description='FITS',
+        enabled=1,
+        command_usage='characterization'
+    ).first()
+    for format_version in FormatVersion.objects.all():
+        rules = FPRule.objects.filter(
+            command__command_usage='characterization',
+            enabled=1,
+            format=format_version).all()
+        # Since FITS is the default characterization rule, we don't need to do
+        # anything for format versions that lack any characterization rule.
+        if len(rules) == 0:
+            no_charact_rules.append(format_version)
+        else:
+            fits_rules = FPRule.objects.filter(
+                command=fits_cmd,
+                enabled=1,
+                format=format_version).all()
+            if len(fits_rules) == 0:
+                no_fits_rule.append(format_version)
+                FPRule.objects.create(
+                    purpose='characterization',
+                    format=format_version,
+                    command=fits_cmd
+                )
+    # print('{} formats with no characterization rules'.format(len(no_charact_rules)))
+    print('Created {} FITS characterization rules'.format(
+        len(no_fits_rule)))
+
+
+if __name__ == '__main__':
+    try:
+        create_fits_rules()
+    except KeyboardInterrupt:
+        sys.exit("\nAborting")
