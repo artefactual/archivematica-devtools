@@ -17,58 +17,76 @@
 # You should have received a copy of the GNU General Public License
 # along with Archivematica.  If not, see <http://www.gnu.org/licenses/>.
 
+function detect_deployment()
+{
+    # detect if upstart/systemd/sysvinit
+    if [[ `/sbin/init --version 2> /dev/null` =~ upstart ]]; then
+	INITSYS="upstart";
+    elif [[ `systemctl` =~ -\.mount ]]; then
+	INITSYS="systemd";
+    elif [[ `-f /etc/init.d/cron && ~ -h /etc/init.d/cron` ]]; then
+	INITSYS="sysvinit" # unlikely
+    fi
+
+  # detect if 1.5 style deployment
+    if [[ `grep "VERSION = (1, 5" /usr/lib/archivematica/archivematicaCommon/version.py` ]]; then
+	INITSYS="1.5";
+    fi
+}
+
 function storage_service()
 {
-    {
-      sudo $ACTION archivematica-storage-service
-    } || { # catch, try with uwsgi in case this is 1.5 style deployment
-        {
-            sudo service uwsgi $ACTION
-        } || {
-            echo "storage_service $ACTION did not work"
-        }
-    }
+    case $INITSYS in
+	upstart) sudo $ACTION archivematica-storage-service;;
+	systemd) sudo systemctl $ACTION archivematica-storage-service;;
+	1.5)     sudo service uwsgi $ACTION;;
+	*) 
+    esac
 }
 
 function dashboard()
 {
-    {
-      sudo $ACTION archivematica-dashboard
-    } || { # catch, try with apoache in case this is 1.5 style deployment
-        {
-            sudo service apache2 $ACTION
-        } || {
-            echo "dashboard $ACTION did not work"
-        }
-    }
-}
-
+    case $INITSYS in
+	upstart) sudo $ACTION archivematica-dashboard;;
+	systemd) sudo systemctl $ACTION archivematica-storage-service;;
+	1.5)     sudo service apache2 $ACTION;;
+    esac
+}    
+ 
 function mcp_server()
 {
-    {
-        sudo $ACTION archivematica-mcp-server
-    } || {
-        echo "mcp server $ACTION did not work"
-    }
+    case $INITSYS in
+	upstart|1.5) sudo $ACTION archivematica-mcp-server;;
+	systemd) sudo systemctl $ACTION archivematica-mcp-server;;
+    esac
 }
 
 function mcp_client()
 {
-    {
-        sudo $ACTION archivematica-mcp-client
-    } || {
-        echo "mcp client $ACTION did not work"
-    }
+    case $INITSYS in
+	upstart|1.5) sudo $ACTION archivematica-mcp-client;;
+	systemd)     sudo systemctl $ACTION archivematica-mcp-client;;
+    esac
 }
 
 function full()
 {
     #handle all services, not just am specific ones
-    sudo service gearman-job-server "$ACTION"
-    sudo "$ACTION" fits
-    sudo service clamav-daemon "$ACTION"
-    sudo service elasticsearch "$ACTION"
-    sudo service nginx "$ACTION"
+    case $INITSYS in
+	upstart|1.5)
+	    sudo service gearman-job-server "$ACTION"
+	    sudo "$ACTION" fits
+	    sudo service clamav-daemon "$ACTION"
+	    sudo service elasticsearch "$ACTION"
+	    sudo service nginx "$ACTION"
+	    ;;
+	systemd)
+	    sudo systemctl $ACTION gearmand
+	    sudo systemctl $ACTION fits-nailgun
+	    sudo systemctl $ACTION clamd
+	    sudo systemctl $ACTION nginx
+	    ;;
+    esac
 
     #only needed if old style
     #sudo service apache2 $ACTION >/dev/null 2>$1 
@@ -79,6 +97,7 @@ function full()
     dashboard
 }
 
+detect_deployment
 
 #defaults
 ACTION="restart"
@@ -91,37 +110,46 @@ LEVEL="basic"
     [ $# -gt 1 ] && LEVEL=$2
 }
 
+
+
 case $ACTION in
-'help')
-    echo "am services: manage archivematica services"
-    echo "Usage: am services <action> <level>"
-    echo "    action can be one of 'restart (default), start, stop, status, help'"
-    echo "    level can be one of 'basic (default), full, storage_service, pipeline'"
-    exit 1
-;;
-'*')
-    echo "attempting $LEVEL $ACTION"
-;;
+    'help')
+	echo "am services: manage archivematica services"
+	echo "Usage: am services <action> <level>"
+	echo "    action can be one of 'restart (default), start, stop, status, help'"
+	echo "    level can be one of 'basic (default), full, storage_service, pipeline'"
+	exit 1
+	;;
+    restart|start|stop|status)
+	echo "attempting $LEVEL $ACTION"
+	;;
+    *)
+	echo "Unknown action $ACTION, available actions are 'restart (default), start, stop, status, help'"
+	exit 1
+	;;
 esac
 
 case $LEVEL in
-'basic')
-    storage_service
-    mcp_server
-    mcp_client
-    dashboard
-;;
-'full')
-    full
-;;
-'storage_service')
-    storage_service
-;;
-'pipeline')
-    mcp_server
-    mcp_client
-    dashboard
-;;
+    'basic')
+	storage_service
+	mcp_server
+	mcp_client
+	dashboard
+	;;
+    'full')
+	full
+	;;
+    'storage_service')
+	storage_service
+	;;
+    'pipeline')
+	mcp_server
+	mcp_client
+	dashboard
+	;;
+    *)
+	echo "Unknown level $LEVEL, available levels are 'basic, full, storage_service, pipeline'"
+	exit 1
 esac
 
 echo "$LEVEL $ACTION complete"
